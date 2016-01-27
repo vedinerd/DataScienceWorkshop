@@ -1,0 +1,1 @@
+Please see the code file run_analysis.R, where the data cleaning and manipulation is documented with inline comments.
