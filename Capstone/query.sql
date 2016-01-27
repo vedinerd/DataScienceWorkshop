@@ -79,7 +79,7 @@ select * from zip_code where city = 'DALLAS'
 
 
 
-vacuum full analyze verbose addresses;
+vacuum full analyze verbose activities;
 
 
 -- we have no location information about the following activities, so they are useless to us
@@ -96,7 +96,16 @@ delete from activities where Discriminator in ('C', 'M', 'OR', 'EG', 'R');
 
 -- clean up some city names
 update activities set activitycity = 'DFW AIRPORT' where activitycity = 'DALLAS/FT. WORTH A/P';
+update activities set activitycity = 'DFW AIRPORT' where activitycity = 'DFW2 AIRPORT';
 
+
+
+
+select activitycity, activitystate, activitycountry, code
+  from activities a
+  left outer join zip_code z on a.activitycity = z.city or a.activitycity = z.city_alias
+ where zip_code is null
+ limit 10
 
 
 
