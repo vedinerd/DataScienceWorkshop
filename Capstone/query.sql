@@ -45,6 +45,8 @@ select * from Packages where id in
 -- last few days of the year.  This is to make sure our entire (or almost our entire) data set represents packages that were delivered in 2015, or *should* have been.
 
 
+
+
 insert into package_activity
 select p.trackingnumber,
        (select (a.ActivityDate::text || '-' || time_zone)::timestamp with time zone
@@ -66,6 +68,62 @@ select p.trackingnumber,
          limit 1) as longitude
   from Activities a
   left join Packages p on p.Id = a.PackageId
+
+select * from package_activity
+
+insert into package_activity
+select p.trackingnumber,
+       null,
+       a.Discriminator as ActivityCode,
+       a.ActivityCity,
+       a.ActivityState,
+       null,
+       null,
+       null,
+       a.ActivityDate
+  from Activities a
+  left join Packages p on p.Id = a.PackageId
+limit 10
+
+
+select * from package_activity limit 10
+
+begin transaction;
+update package_activity
+
+
+   set zip_code = zc.zip_code
+
+
+
+select package_activity.tracking_number, null, activity_code, city, state, zc.zip_code, null, null, 
+into package_activity_2
+  from zip_code zc, package_activity
+ where package_activity.state = zc.state
+   and (package_activity.city = zc.city or package_activity.city = zc.city_alias)
+limit 10000
+
+
+
+select * from package_activity_2 limit 10
+
+alter table package_activity add column date_time_raw timestamp
+
+
+ limit 10;
+
+
+
+
+CREATE INDEX ON package_activity(state);
+CREATE INDEX ON package_activity(city);
+
+CREATE INDEX ON zip_code(state);
+CREATE INDEX ON zip_code(city);
+CREATE INDEX ON zip_code(city_alias);
+
+
+
 
 limit 1000
 
@@ -93,6 +151,7 @@ delete from packages where COALESCE(ScheduledDeliveryDate, LastScheduledDelivery
 
 -- the following activities are not of interest to us, so get rid of them
 delete from activities where Discriminator in ('C', 'M', 'OR', 'EG', 'R');
+delete from activities where discriminator is null;
 
 -- clean up some city names
 update activities set activitycity = 'DFW AIRPORT' where activitycity = 'DALLAS/FT. WORTH A/P';
@@ -106,6 +165,31 @@ select activitycity, activitystate, activitycountry, code
   left outer join zip_code z on a.activitycity = z.city or a.activitycity = z.city_alias
  where zip_code is null
  limit 10
+
+
+HOPEMILLS	NC
+HOPEMILLS	NC
+HOPEMILLS	NC
+SAN TAN	AZ
+FT. WORTH	TX
+COLD BROOKE	NY
+FT. PIERCE	FL
+FT. PIERCE	FL
+FT. PIERCE	FL
+FT. PIERCE	FL
+
+
+
+update activities set activitycity = 'SAINT JOSEPH' where activitycity = 'ST. JOSEPH';
+update activities set activitycity = 'SAINT CLAIRSVILLE' where activitycity = 'ST. CLAIRSVILLE';
+update activities set activitycity = 'HOPE MILLS' where activitycity = 'HOPE MILLS';
+update activities set activitycity = 'HASLET' where activitycity = 'HASLEP';
+
+
+select * from zip_code where (city like '%CALUMET%' or city_alias like '%CALUMET%')
+and state = 'IN'
+
+
 
 
 
@@ -196,7 +280,7 @@ select * from zip_code limit 1000
 CREATE TABLE public.package_activity
 (
 tracking_number text not null,
-date_time timestamp with time zone not null,
+date_time timestamp with time zone,
 activity_code text not null,
 city text,
 state text,
