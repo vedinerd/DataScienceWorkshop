@@ -1,4 +1,147 @@
-﻿
+﻿/*
+The raw data I have follows the schema as specified in raw_schema.txt and is located in a Microsoft SQL Server
+Express database (the package activity data) as well as QCLCD (Quality Controlled Local Climatological Data)
+from NOAA for all of 2015 (1).
+
+
+
+(1) http://www.ncdc.noaa.gov/orders/qclcd/
+
+
+http://www.ncdc.noaa.gov/orders/qclcd/
+
+. Because of the limitations of the Express edition of Microsoft SQL Server, I imported the
+data into a local copy of a PostgreSQL database, removing extraneous data along the way and combining the data with
+.
+
+activities (
+  id bigint NOT NULL,
+  activitydate timestamp without time zone NOT NULL,
+  datecreated timestamp without time zone NOT NULL,
+  activitycity character varying(50),
+  activitystate character varying(2),
+  activitycountry character varying(5),
+  code character varying(100),
+  description character varying(255),
+  activityzip character varying(10),
+  exceptioncode character varying(20),
+  exceptiondescription character varying(255),
+  packageid bigint NOT NULL,
+  rescheduleddate timestamp without time zone,
+  discriminator character varying(128)
+)
+
+packages (
+  id bigint NOT NULL,
+  workflowstatus integer NOT NULL,
+  legacyid character varying(128),
+  escalationjustificationid integer,
+  datecreated timestamp without time zone,
+  customerreferencenumber character varying(255),
+  dateupdated timestamp without time zone,
+  trackingnumber character varying(50),
+  engageddate timestamp without time zone,
+  firstspecialistactivitydate timestamp without time zone,
+  lastspecialistactivitydate timestamp without time zone,
+  lastactivitydate timestamp without time zone,
+  carrieraddressid bigint,
+  adjusteddestinationaddressid bigint,
+  originaldestinationaddressid bigint,
+  deliveryaddressid bigint,
+  reroutetoaddressid bigint,
+  returntoaddressid bigint,
+  shipperaddressid bigint,
+  deliveryconfirmed bit(1),
+  signaturerequired bit(1),
+  unitofworkid character varying(255),
+  carrierid integer NOT NULL,
+  clienttendereddate timestamp without time zone,
+  deliverydate timestamp without time zone,
+  lasttrackdate timestamp without time zone,
+  manifestdate timestamp without time zone,
+  nexttrackdateutc timestamp without time zone,
+  rescheduleddeliverydate timestamp without time zone,
+  scheduleddeliverydate timestamp without time zone,
+  lastscheduleddeliverydate timestamp without time zone,
+  tendereddate timestamp without time zone,
+  originalscheduleddeliverydate timestamp without time zone,
+  contentsvalue money,
+  deliveryprobability money,
+  weight money,
+  firstactivityspecialistid character varying(255),
+  specialistid character varying(255),
+  clientid integer NOT NULL,
+  locationid integer,
+  resolutionid integer,
+  rootcauseid integer,
+  tier integer,
+  engagementjustification integer,
+  addressclassification integer,
+  timezone integer,
+  shipmentreferencenumber character varying(100),
+  serviceclass integer,
+  billedaccount character varying(100),
+  carrierstatuscode character varying(100),
+  carrierstatusdesc character varying(100),
+  servicecode character varying(100),
+  servicedesc character varying(100),
+  clientmessage character varying(100),
+  contentsdescription character varying(1000),
+  podcontact character varying(100),
+  ownername character varying(100),
+  ordernumber character varying(100),
+  recipientid character varying(100),
+  shipmentid character varying(100),
+  shipmentweightuom character varying(3),
+  shipperaccount character varying(100),
+  signedforbyt1 character varying(255),
+  weightuom character varying(3),
+  protectionstateid integer,
+  transitstateid integer,
+  carrierfax character varying(100),
+  carrieremail character varying(100),
+  closeddate timestamp without time zone,
+  autoclose bit(1),
+  clientapprovalby character varying(100),
+  couriersettingsid bigint,
+  user_id character varying(255)
+)
+
+addresses (
+  id bigint NOT NULL,
+  line1 character varying(255),
+  line2 character varying(100),
+  city character varying(100),
+  state character varying(5),
+  zip character varying(11),
+  line3 character varying(100),
+  country character varying(3),
+  name character varying(100),
+  company character varying(100),
+  phone character varying(50),
+  fax character varying(50),
+  email character varying(255),
+  isresidential bit(1),
+  additionalinfo character varying(255),
+  attn character varying(100),
+  phonesecondary character varying(50),
+  phoneother character varying(50),
+  title character varying(50),
+  timezone character varying(10),
+  lat numeric(18,2),
+  lon numeric(18,2),
+  rowversion character varying(128) NOT NULL
+)
+
+ and is located in a Microsoft SQL Server Express database.
+Because of the limitations of the Express edition of Microsoft SQL Server, I imported the data into a local copy of
+a PostgreSQL database.
+
+
+*/
+
+
+
 copy zip_codes_raw from E'C:\\zip_codes.txt' WITH NULL '';
 
 insert into zip_code
@@ -47,6 +190,50 @@ select * from Packages where id in
 
 
 
+select zip_code, avg(latitude) as latitude, avg(longitude) as longitude, max(time_zone) as time_zone
+into zip_code_group
+  from zip_code
+ group by zip_code;
+
+ALTER TABLE public.package_activity ADD CONSTRAINT "FK_zip_code" FOREIGN KEY (zip_code) REFERENCES public.zip_code_group(zip_code) ON UPDATE NO ACTION ON DELETE NO ACTION;
+
+
+
+begin transaction
+
+update package_activity
+   set latitude = zip_code_group.latitude,
+       longitude = zip_code_group.longitude,
+       date_time = (date_time_raw::text || '-' || zip_code_group.time_zone)::timestamp with time zone
+  from zip_code_group
+ where zip_code_group.zip_code = package_activity.zip_code
+   and package_activity.latitude is null
+
+commit
+
+
+   and package_activity.state = 'IN'
+
+
+
+vacuum full analyze verbose package_activity;
+
+
+
+
+select * from package_Activity limit 10 where latitude is null or longitude is null or date_time is null
+
+
+
+select state, count(state) from package_activity group by state order by count(state) desc;
+select state, count(state) from package_activity where latitude is null group by state order by count(state) desc;
+
+
+
+
+
+
+
 insert into package_activity
 select p.trackingnumber,
        (select (a.ActivityDate::text || '-' || time_zone)::timestamp with time zone
@@ -86,22 +273,197 @@ select p.trackingnumber,
 limit 10
 
 
+select * from package_Activity
+
+
 select * from package_activity limit 10
 
 begin transaction;
+
 update package_activity
-
-
    set zip_code = zc.zip_code
-
-
-
-select package_activity.tracking_number, null, activity_code, city, state, zc.zip_code, null, null, 
-into package_activity_2
-  from zip_code zc, package_activity
+  from zip_code zc
  where package_activity.state = zc.state
    and (package_activity.city = zc.city or package_activity.city = zc.city_alias)
+   and package_activity.state in ('NY')
+   and package_activity.zip_code is null;
+
+begin transaction
+update package_activity
+   set zip_code = zc.zip_code
+  from zip_code zc
+ where package_activity.state = zc.state
+   and (replace(package_activity.city, 'CINCINNATTI', 'CINCINNATI') = zc.city or replace(package_activity.city, 'CINCINNATTI', 'CINCINNATI') = zc.city_alias)
+   and package_activity.zip_code is null;
+
+commit
+
+
+
+
+
+STATEN ISLAND
+
+
+
+select * from package_activity limit 10
+
+select city, count(*) from package_activity where zip_code is null group by city order by count(*) desc
+
+LEE`S SUMMIT
+
+update package_activity set state = 'NY' where state = 'NJ' and city = 'STATEN ISLAND'
+
+select * from package_activity where city = 'STATEN ISLAND' order by state
+select * from zip_code where zip_code = '96740'
+
+select city, city_alias from zip_code order by city
+
+select count(*) from package_Activity where zip_code is not null
+select count(*) from package_Activity where zip_code is null
+
+17917547
+   7285
+
+-- 0.04% records retain misspellings; drop them rather then spend the time matching them
+delete from package_activity where zip_code is null;
+
+
+
+
+select * from package
+
+
+
+
+
+
+
+
+
+
+vacuum full analyze verbose package_activity;
+
+select build_activities()
+
+
+
+CREATE OR REPLACE FUNCTION build_activities() RETURNS setof void AS
+$BODY$
+BEGIN
+
+FOR i IN 1..200 LOOP
+
+update package_activity
+   set zip_code = zc.zip_code
+  from zip_code zc
+ where package_activity.state = zc.state
+   and (package_activity.city = zc.city or package_activity.city = zc.city_alias)
+   and package_activity.date_time_raw >= ('2015-06-23'::timestamp + (i || ' day')::interval)
+   and package_activity.date_time_raw < ('2015-06-24'::timestamp + (i || ' day')::interval)
+   and package_activity.zip_code is null;
+
+   RAISE NOTICE 'Day (%)', i;
+   
+END LOOP;
+
+    RETURN;
+END
+$BODY$
+LANGUAGE plpgsql;
+
+
+TN	1695234
+KY	1511094
+FL	1271564
+MI	901697
+PA	877079
+IL	869072
+IN	695401
+OH	676493
+NY	498092
+MO	437250
+NJ	389619
+NC	360089
+VA	308931
+AZ	285223
+GA	276081
+MN	223233
+WI	208687
+KS	202997
+OK	172391
+SC	148517
+MD	128789
+
+
+
+
+select state, count(state) from package_activity
+where zip_code is null
+group by state
+order by count(state) desc
+
+
+
+
+AR
+AZ
+CO
+CT
+DC
+DE
+FL
+GA
+HI
+IA
+ID
+IL
+IN
+KS
+KY
+LA
+MA
+MD
+ME
+MH
+MI
+MN
+MO
+MS
+MT
+NC
+NE
+NH
+NJ
+NM
+NV
+NY
+OH
+OK
+PA
+RI
+SC
+TN
+UT
+VA
+VI
+VT
+WI
+WV
+WY
+
+
+
+vacuum full analyze verbose package_activity
+
+
+
+select * from package_activity where state = 'ND'
+
+
 limit 10000
+
+select distinct city, state from package_activity where city like 'ST.%'
 
 
 
@@ -115,8 +477,9 @@ alter table package_activity add column date_time_raw timestamp
 
 
 
-CREATE INDEX ON package_activity(state);
+CREATE INDEX ON package_activity(date_time_raw);
 CREATE INDEX ON package_activity(city);
+CREATE INDEX ON package_activity(state);
 
 CREATE INDEX ON zip_code(state);
 CREATE INDEX ON zip_code(city);
