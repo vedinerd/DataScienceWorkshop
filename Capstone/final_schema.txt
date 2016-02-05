@@ -20,24 +20,7 @@ package_activity (
   zip_code text,
   latitude numeric(18,6),
   longitude numeric(18,6),
-  position geometry,
   closest_station_wban text
-)
-
--- The weather_station table contains one row per weather station.
-weather_station (
-  wban text NOT NULL,
-  callsign text,
-  climatedivisioncode text,
-  climatedivisionstatecode text,
-  station_name text,
-  state text,
-  station_location text,
-  latitude numeric(18,6),
-  longitude numeric(18,6),
-  groundheight numeric(18,0),
-  timezone integer,
-  position geometry
 )
 
 -- The weather table contains one row per weather measurement.

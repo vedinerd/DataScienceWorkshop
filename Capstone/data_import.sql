@@ -206,3 +206,181 @@ update package_activity
            limit 1
        );
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+update package_activity
+   set closest_station_wban =
+       (
+          select ws.wban
+            from weather_station ws
+           order by ST_Distance(ws.position, package_activity.position)
+           limit 1
+       )
+ where state = 'KY' and closest_station_wban is null;
+
+
+select state, count(state) from package_activity group by state order by count(state) desc
+
+CREATE INDEX ON package_activity(closest_station_wban);
+
+
+vacuum full analyze verbose package_activity;
+
+
+
+update package_activity
+   set closest_station_wban =
+       (
+          select ws.wban
+            from weather_station ws
+           order by ST_Distance(ws.position, package_activity.position)
+           limit 1
+       )
+ where package_activity.date_time >= ('2014-06-15 00:00:00.000-8'::timestamp + ('3 day')::interval)
+   and package_activity.date_time < ('2015-07-15 23:59:59.999-8'::timestamp + ('3 day')::interval)
+   and closest_station_wban is null;
+
+vacuum full analyze verbose package_activity
+vacuum analyze verbose package_activity
+
+
+select date_trunc('day', date_time AT TIME ZONE 'PST'), count(date_trunc('day', date_time AT TIME ZONE 'PST')) from package_activity where closest_station_wban is null group by date_trunc('day', date_time AT TIME ZONE 'PST') order by date_trunc('day', date_time AT TIME ZONE 'PST')
+
+
+
+
+CREATE INDEX ON package_activity(date_trunc('day', date_time AT TIME ZONE 'PST'));
+
+
+
+select build_activities()
+
+
+select * from package where ship_date_time > '2015-10-01' and ship_date_time < '2015-10-30' limit 10
+
+
+640912357543	2015-06-29 00:00:00	2015-06-30 20:00:00	2015-06-30 12:32:00	STANDARD OVERNIGHT
+438954270044174	2015-07-29 12:57:00	2015-07-30 00:00:00	2015-07-30 11:36:57	GROUND HOME DELIVERY
+565094241949	2015-08-27 00:00:00	2015-08-28 11:00:00	2015-08-28 10:41:00	FIRST OVERNIGHT
+1Z0R544VNT23620611	2015-09-29 21:32:18	2015-09-30 23:59:59	2015-09-30 12:29:00	NEXT DAY AIR
+1Z9772030310210250	2015-10-29 21:01:22	2015-10-30 23:59:59		GROUND
+
+select * from weather_station where wban in (
+select distinct closest_station_wban from package_activity where tracking_number in 
+('640912357543',
+'438954270044174',
+'565094241949',
+'1Z0R544VNT23620611',
+'1Z9772030310210250')
+)
+
+
+
+
+
+
+select w.* from package_activity pa
+inner join 
+weather w on w.wban = pa.closest_station_wban and date_trunc('hour', w.measurement_time + '30 minute'::interval) = date_trunc('hour', pa.date_time + '30 minute'::interval)
+where pa.tracking_number in 
+('640912357543',
+'438954270044174',
+'565094241949',
+'1Z0R544VNT23620611',
+'1Z9772030310210250')
+
+
+
+
+
+
+CREATE INDEX ON weather (wban);
+
+
+
+select (date_trunc('hour', measurement_time + '30 minute'::interval)) from weather where wban in ('13988','13807','14891','04853','13893','12841','93819','93821','93805','14804','23122','03970','94889','13839','04848','94817')
+
+
+
+select *
+  from package_activity
+ where tracking_number in
+('640912357543',
+'438954270044174',
+'565094241949',
+'1Z0R544VNT23620611',
+'1Z9772030310210250')
+
+
+
+
+CREATE INDEX ON package_activity (date_trunc('hour', date_time + '30 minute'::interval));
+
+
+
+order by tracking_number
+
+
+
+
+
+CREATE OR REPLACE FUNCTION public.build_activities()
+  RETURNS SETOF void AS
+$BODY$
+BEGIN
+
+FOR i IN 101..110 LOOP
+
+update package_activity
+   set closest_station_wban =
+       (
+          select ws.wban
+            from weather_station ws
+           order by ST_Distance(ws.position, package_activity.position)
+           limit 1
+       )
+ where package_activity.date_time >= ('2015-06-15 00:00:00.000-8'::timestamp with time zone + (i || ' day')::interval)
+   and package_activity.date_time < ('2015-06-15 23:59:59.999-8'::timestamp with time zone + (i || ' day')::interval)
+   and closest_station_wban is null;
+
+   RAISE NOTICE 'Day (%)', i;
+   
+END LOOP;
+
+    RETURN;
+END
+$BODY$
+  LANGUAGE plpgsql VOLATILE
+  COST 100
+  ROWS 1000;
+ALTER FUNCTION public.build_activities()
+  OWNER TO postgres;
+
+
+
+
+
+
+
+
+
+
+select * from weather_station
