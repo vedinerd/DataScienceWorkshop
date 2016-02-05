@@ -5,3 +5,5 @@
 Baseball
 Capstone/raw_weather_data
 .Rproj.user
+*.RData
+*.Rhistory
