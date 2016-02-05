@@ -49,6 +49,7 @@ from zip_codes_raw;
 -- - we construct the full date time from three columns, the date, the time, and the timezone (from the weather_station table)
 -- - there are a number of text codes in a few columns (winddirection, hourlyprecip, etc..) that require special filtering
 -- - we convert 'T' for hourly precip (meaning 'trace') to 0.005 so we record that there was SOME precipitation but can still keep the column numeric
+ALTER TABLE public.weather ALTER COLUMN rounded_date_time DROP NOT NULL;
 insert into weather
 select trim(upper(whr.wban)),
        (substring(date from 1 for 4) || '-' ||
@@ -74,6 +75,36 @@ select trim(upper(whr.wban)),
  inner join weather_station ws
     on whr.wban = ws.wban
  where trim(upper(skycondition)) != 'M';
+
+-- note that we get the rounded by hour date time by adding 30 minutes to the date time and truncating that time at the hour
+update weather set rounded_date_time = date_trunc('hour', measurement_time + '30 minute'::interval);
+ALTER TABLE weather ALTER COLUMN rounded_date_time SET NOT NULL;
+
+-- The weather table contains several readings per hour per station.  To make the table easier to work with, we can 
+-- group by the station and hour and take the average reading per hour.  This eliminates a lot of rows, and the hourly
+-- weather resolution should still be good enough for our purposes.
+select wban,
+       rounded_date_time as date_time,
+       avg(visibility)::numeric(5,2) as visibility,
+       max(weather_type) as weather_type,
+       avg(dry_bulb_celsius)::numeric(5,1) as dry_bulb_celsius,
+       avg(wet_bulb_celsius)::numeric(5,1) as wet_bulb_celsius,
+       avg(dew_point_celsius)::numeric(5,1) as dew_point_celsius,
+       avg(relative_humidity)::numeric(4,0) as relative_humidity,
+       avg(wind_speed)::numeric(4,0) as wind_speed,
+       avg(wind_direction)::numeric(3,0) as wind_direction,
+       avg(station_pressure)::numeric(5,2) as station_pressure,
+       max(record_type) as record_type,
+       avg(coalesce(hourly_precip, 0.00))::numeric(6,3) as hourly_precip,
+       avg(altimeter)::numeric(7,2) as altimeter
+  into weather_grouped
+  from weather
+ group by wban, rounded_date_time;
+
+-- replace the weather table with our new weather_grouped table
+drop table weather;
+ALTER TABLE weather_grouped RENAME TO weather;
+ALTER TABLE weather ADD CONSTRAINT "PK_weather" PRIMARY KEY (wban, date_time);
 
 
 -------------------------------------------------------------------------------
@@ -108,13 +139,14 @@ update activities set activitycity = 'HOPE MILLS' where activitycity = 'HOPE MIL
 update activities set activitycity = 'HASLET' where activitycity = 'HASLEP';
 
 -- build the package_activity table from the activities table
+-- note that we get the rounded by hour date time by adding 30 minutes to the date time and truncating that time at the hour
 insert into package_activity
 select trim(upper(p.trackingnumber)),
        (select (a.ActivityDate::text || '-' || time_zone)::timestamp with time zone
           from zip_code
          where state = activitystate
            and (city = activitycity or city_alias = activitycity)
-         limit 1) as activity_date,
+         limit 1) as date_time,
        a.Discriminator,
        a.ActivityCity,
        a.ActivityState,
@@ -127,7 +159,12 @@ select trim(upper(p.trackingnumber)),
           from zip_code
          where state = activitystate
            and (city = activitycity or city_alias = activitycity)
-         limit 1) as longitude
+         limit 1) as longitude,
+       (select date_trunc('hour', (a.ActivityDate::text || '-' || time_zone)::timestamp with time zone + '30 minute'::interval)
+          from zip_code
+         where state = activitystate
+           and (city = activitycity or city_alias = activitycity)
+         limit 1) as rounded_date_time
   from Activities a
   left join Packages p on p.Id = a.PackageId;
 
@@ -140,15 +177,12 @@ so we should delete the duplicated data.  To do so we add a tempoarary column of
 unique value per row.  We delete this temporary column when we're done.
 */
 alter table package_activity add column temp_id serial;
-CREATE INDEX ON package_activity (tracking_number, date_time, activity_code);
-begin transaction;
 delete from package_activity where temp_id not in
-(select min(temp_id)
-   from package_activity
-  group by tracking_number, date_time, activity_code);
+       (select min(temp_id)
+         from package_activity
+        group by tracking_number, date_time, activity_code);
 ALTER TABLE package_activity ADD CONSTRAINT "PK_package_activity" PRIMARY KEY (tracking_number, date_time, activity_code);
 alter table package_activity drop column temp_id;
-CREATE INDEX ON package(tracking_number);
 
 -- there are a few package_activity records that correspond to packages we've removed from the package table; delete them
 delete from package_activity where tracking_number not in (select tracking_number from package);
@@ -174,7 +208,6 @@ select upper(trim(trackingnumber)),
        ServiceDesc
   from Packages p;
 ALTER TABLE package ADD CONSTRAINT "PK_package" PRIMARY KEY (tracking_number);
-CREATE INDEX ON package(tracking_number);
 
 
 -------------------------------------------------------------------------------
@@ -185,10 +218,10 @@ package_activity and weather_station tables which will contain the latitude and 
 in a way the PostGIS tool expects.  Note that the PostGIS tool expects the longitude as the first
 parameter, which is backwards from what we'd normally expect.
 */
-alter table weather_station add column position geometry;
-update weather_station set position = ST_Point(longitude, latitude);
-alter table package_activity add column position geometry;
-update package_activity set position = ST_Point(longitude, latitude);
+alter table weather_station add column geo_location geometry;
+update weather_station set geo_location = ST_Point(longitude, latitude);
+alter table package_activity add column geo_location geometry;
+update package_activity set geo_location = ST_Point(longitude, latitude);
 
 /*
 We then add a column to the package_activity table which will contain the closest weather station, which
@@ -202,185 +235,11 @@ update package_activity
        (
           select ws.wban
             from weather_station ws
-           order by ST_Distance(ws.position, package_activity.position)
+           order by ST_Distance(ws.geo_location, package_activity.geo_location)
            limit 1
        );
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-update package_activity
-   set closest_station_wban =
-       (
-          select ws.wban
-            from weather_station ws
-           order by ST_Distance(ws.position, package_activity.position)
-           limit 1
-       )
- where state = 'KY' and closest_station_wban is null;
-
-
-select state, count(state) from package_activity group by state order by count(state) desc
-
-CREATE INDEX ON package_activity(closest_station_wban);
-
-
-vacuum full analyze verbose package_activity;
-
-
-
-update package_activity
-   set closest_station_wban =
-       (
-          select ws.wban
-            from weather_station ws
-           order by ST_Distance(ws.position, package_activity.position)
-           limit 1
-       )
- where package_activity.date_time >= ('2014-06-15 00:00:00.000-8'::timestamp + ('3 day')::interval)
-   and package_activity.date_time < ('2015-07-15 23:59:59.999-8'::timestamp + ('3 day')::interval)
-   and closest_station_wban is null;
-
-vacuum full analyze verbose package_activity
-vacuum analyze verbose package_activity
-
-
-select date_trunc('day', date_time AT TIME ZONE 'PST'), count(date_trunc('day', date_time AT TIME ZONE 'PST')) from package_activity where closest_station_wban is null group by date_trunc('day', date_time AT TIME ZONE 'PST') order by date_trunc('day', date_time AT TIME ZONE 'PST')
-
-
-
-
-CREATE INDEX ON package_activity(date_trunc('day', date_time AT TIME ZONE 'PST'));
-
-
-
-select build_activities()
-
-
-select * from package where ship_date_time > '2015-10-01' and ship_date_time < '2015-10-30' limit 10
-
-
-640912357543	2015-06-29 00:00:00	2015-06-30 20:00:00	2015-06-30 12:32:00	STANDARD OVERNIGHT
-438954270044174	2015-07-29 12:57:00	2015-07-30 00:00:00	2015-07-30 11:36:57	GROUND HOME DELIVERY
-565094241949	2015-08-27 00:00:00	2015-08-28 11:00:00	2015-08-28 10:41:00	FIRST OVERNIGHT
-1Z0R544VNT23620611	2015-09-29 21:32:18	2015-09-30 23:59:59	2015-09-30 12:29:00	NEXT DAY AIR
-1Z9772030310210250	2015-10-29 21:01:22	2015-10-30 23:59:59		GROUND
-
-select * from weather_station where wban in (
-select distinct closest_station_wban from package_activity where tracking_number in 
-('640912357543',
-'438954270044174',
-'565094241949',
-'1Z0R544VNT23620611',
-'1Z9772030310210250')
-)
-
-
-
-
-
-
-select w.* from package_activity pa
-inner join 
-weather w on w.wban = pa.closest_station_wban and date_trunc('hour', w.measurement_time + '30 minute'::interval) = date_trunc('hour', pa.date_time + '30 minute'::interval)
-where pa.tracking_number in 
-('640912357543',
-'438954270044174',
-'565094241949',
-'1Z0R544VNT23620611',
-'1Z9772030310210250')
-
-
-
-
-
-
-CREATE INDEX ON weather (wban);
-
-
-
-select (date_trunc('hour', measurement_time + '30 minute'::interval)) from weather where wban in ('13988','13807','14891','04853','13893','12841','93819','93821','93805','14804','23122','03970','94889','13839','04848','94817')
-
-
-
-select *
-  from package_activity
- where tracking_number in
-('640912357543',
-'438954270044174',
-'565094241949',
-'1Z0R544VNT23620611',
-'1Z9772030310210250')
-
-
-
-
-CREATE INDEX ON package_activity (date_trunc('hour', date_time + '30 minute'::interval));
-
-
-
-order by tracking_number
-
-
-
-
-
-CREATE OR REPLACE FUNCTION public.build_activities()
-  RETURNS SETOF void AS
-$BODY$
-BEGIN
-
-FOR i IN 101..110 LOOP
-
-update package_activity
-   set closest_station_wban =
-       (
-          select ws.wban
-            from weather_station ws
-           order by ST_Distance(ws.position, package_activity.position)
-           limit 1
-       )
- where package_activity.date_time >= ('2015-06-15 00:00:00.000-8'::timestamp with time zone + (i || ' day')::interval)
-   and package_activity.date_time < ('2015-06-15 23:59:59.999-8'::timestamp with time zone + (i || ' day')::interval)
-   and closest_station_wban is null;
-
-   RAISE NOTICE 'Day (%)', i;
-   
-END LOOP;
-
-    RETURN;
-END
-$BODY$
-  LANGUAGE plpgsql VOLATILE
-  COST 100
-  ROWS 1000;
-ALTER FUNCTION public.build_activities()
-  OWNER TO postgres;
-
-
-
-
-
-
-
-
-
-
-select * from weather_station
+-- create some database foreign keys to ensure data integrity
+ALTER TABLE package_activity ADD CONSTRAINT "FK_closest_station_wban" FOREIGN KEY (closest_station_wban) REFERENCES weather_station(wban) ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE package_activity ADD CONSTRAINT "FK_tracking_number" FOREIGN KEY (tracking_number) REFERENCES package(tracking_number) ON UPDATE NO ACTION ON DELETE NO ACTION;
+ALTER TABLE weather ADD CONSTRAINT "FK_wban" FOREIGN KEY (wban) REFERENCES weather_station(wban) ON UPDATE NO ACTION ON DELETE NO ACTION;

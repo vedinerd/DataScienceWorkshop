@@ -10,7 +10,8 @@ package (
 -- The package_activity table contains one row per package activity, such as a
 -- delivery activity or an exception.  The table has already been processed to
 -- contain a reference to the closest weather station for that package
--- activity.
+-- activity.  The rounded_date_time column contains the same data as the
+-- date_time column, but rounded to the closest hour.
 package_activity (
   tracking_number text NOT NULL,
   date_time timestamp with time zone NOT NULL,
@@ -20,13 +21,29 @@ package_activity (
   zip_code text,
   latitude numeric(18,6),
   longitude numeric(18,6),
-  closest_station_wban text
+  closest_station_wban text,
+  rounded_date_time timestamp with time zone NOT NULL
+)
+
+-- The weather_station table contains one row per weather station.
+weather_station (
+  wban text NOT NULL,
+  callsign text,
+  climatedivisioncode text,
+  climatedivisionstatecode text,
+  station_name text,
+  state text,
+  station_location text,
+  latitude numeric(18,6),
+  longitude numeric(18,6),
+  groundheight numeric(18,0),
+  timezone integer
 )
 
 -- The weather table contains one row per weather measurement.
 weather (
   wban text NOT NULL,
-  measurement_time timestamp with time zone NOT NULL,
+  date_time timestamp with time zone NOT NULL,
   visibility numeric(5,2),
   weather_type text,
   dry_bulb_celsius numeric(5,1),
@@ -38,5 +55,6 @@ weather (
   station_pressure numeric(5,2),
   record_type text,
   hourly_precip numeric(6,3),
-  altimeter numeric(7,2)
+  altimeter numeric(7,2),
+  rounded_date_time timestamp with time zone NOT NULL
 )
