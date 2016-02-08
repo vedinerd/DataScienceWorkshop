@@ -111,3 +111,57 @@ b <- ggplot(aes(color, mean_price), data = diamonds_mp_by_color) +
 grid.arrange(a, b, ncol = 1)
 ggsave('color_and_clarity_groups.png')
 
+# The Gapminder website contains over 500 data sets with information about
+# the world's population. Your task is to continue the investigation you did at the
+# end of Problem Set 3 or you can start fresh and choose a different
+# data set from Gapminder.
+# In your investigation, examine pairs of variable and create 2-5 plots that make
+# use of the techniques from Lesson 4.
+library(tidyr)
+library(dplyr)
+
+# read in the co2 data from problem set 3
+co2Data <-
+   read.csv('indicator_CDIAC_carbon_dioxide_total_emissions.csv') %>%
+   gather(year, emission_total, X1751:X2011) %>%
+   transmute(country = as.character(CO2.emission.total), year = as.numeric(gsub("X", "", year)), emission_total)
+
+# read in BMI data
+bmiData <-
+   read.csv('Indicator_BMI_male_ASM.csv') %>%
+   gather(year, bmi, X1980:X2008) %>%
+   transmute(country = as.character(Country), year = as.numeric(gsub("X", "", year)), bmi)
+
+# join the two tables and filter everything out except the top 10 countries by GDP (according to wikipedia)
+multivariate <-
+   bmiData %>%
+   left_join(co2Data, c("country", "year")) %>%
+   filter(country %in% c('United States', 'China', 'Japan', 'Germany', 'United Kingdom', 'France', 'India', 'Italy', 'Brazil', 'Canada'))
+
+# first plot emission total vs. bmi for all countries
+ggplot(aes(x = emission_total, y = bmi, group = country),
+       data = multivariate) +
+   geom_point(aes(color = country))
+ggsave('bmi_emission_01.png')
+
+# show linear regression lines for each country
+ggplot(aes(x = emission_total, y = bmi, group = country),
+       data = multivariate) +
+   geom_point(aes(color = country)) +
+   geom_ribbon(stat='smooth', method = "lm", se=TRUE, alpha=0.1, 
+               aes(color = country)) +
+   geom_line(stat='smooth', method = "lm", alpha=0.3)   
+ggsave('bmi_emission_02.png')
+
+# zoom in on the left hand side
+ggplot(aes(x = emission_total, y = bmi, group = country),
+       data = multivariate) +
+   geom_point(aes(color = country)) +
+   geom_ribbon(stat='smooth', method = "lm", se=TRUE, alpha=0.1, 
+               aes(color = country)) +
+   geom_line(stat='smooth', method = "lm", alpha=0.3) +
+   coord_cartesian(xlim = c(0, 1500000),
+                   ylim = c(22, 28))
+ggsave('bmi_emission_03.png')
+
+
