@@ -154,35 +154,31 @@ ggplot(aes(x = emission_per_capita, y = gdp_per_capita),
 ggsave('gdp_per_capita_vs_emission_per_capita.png')
 
 # split this plot out over three different year groups
-grid.arrange(
-   ggplot(aes(x = emission_per_capita, y = gdp_per_capita),
-          data = filter(multivariate,
-                        !is.na(gdp_quartile) & !is.na(emission_per_capita) & year <= 1945)) +
-      geom_point(aes(color = gdp_quartile), alpha = 0.30) +
-      ggtitle("<= 1940") +
-      scale_x_log10() +
-      scale_y_log10() +
-      coord_cartesian(xlim = c(0.001, 100), ylim = c(100, 1000000)),
-   ggplot(aes(x = emission_per_capita, y = gdp_per_capita),
-          data = filter(multivariate,
-                        !is.na(gdp_quartile) & !is.na(emission_per_capita) & year > 1945 & year <= 1980)) +
-      geom_point(aes(color = gdp_quartile), alpha = 0.30) +
-      ggtitle("> 1945 and <= 1980") +
-      scale_x_log10() +
-      scale_y_log10() +
-      coord_cartesian(xlim = c(0.001, 100), ylim = c(100, 1000000)),
-   ggplot(aes(x = emission_per_capita, y = gdp_per_capita),
-          data = filter(multivariate,
-                        !is.na(gdp_quartile) & !is.na(emission_per_capita) & year > 1980)) +
-      geom_point(aes(color = gdp_quartile), alpha = 0.30) +
-      ggtitle("> 1981") +
-      scale_x_log10() +
-      scale_y_log10() +
-      coord_cartesian(xlim = c(0.001, 100), ylim = c(100, 1000000)))
-ggsave('gdp_per_capita_vs_emission_per_capita_year_group.png')
-
-   
-
-
-
+plot1 <- ggplot(aes(x = emission_per_capita, y = gdp_per_capita),
+       data = filter(multivariate,
+                     !is.na(gdp_quartile) & !is.na(emission_per_capita) & year <= 1945)) +
+   geom_point(aes(color = gdp_quartile), alpha = 0.30) +
+   ggtitle("<= 1940") +
+   scale_x_log10() +
+   scale_y_log10() +
+   coord_cartesian(xlim = c(0.001, 100), ylim = c(100, 1000000))
+plot2 <- ggplot(aes(x = emission_per_capita, y = gdp_per_capita),
+       data = filter(multivariate,
+                     !is.na(gdp_quartile) & !is.na(emission_per_capita) & year > 1945 & year <= 1980)) +
+   geom_point(aes(color = gdp_quartile), alpha = 0.30) +
+   ggtitle("> 1945 and <= 1980") +
+   scale_x_log10() +
+   scale_y_log10() +
+   coord_cartesian(xlim = c(0.001, 100), ylim = c(100, 1000000))
+plot3 <- ggplot(aes(x = emission_per_capita, y = gdp_per_capita),
+       data = filter(multivariate,
+                     !is.na(gdp_quartile) & !is.na(emission_per_capita) & year > 1980)) +
+   geom_point(aes(color = gdp_quartile), alpha = 0.30) +
+   ggtitle("> 1981") +
+   scale_x_log10() +
+   scale_y_log10() +
+   coord_cartesian(xlim = c(0.001, 100), ylim = c(100, 1000000))
+grid.arrange(plot1, plot2, plot3, ncol = 1)
+g <- arrangeGrob(plot1, plot2, plot3, ncol=1)
+ggsave(file="gdp_per_capita_vs_emission_per_capita_year_group.png", g)
 

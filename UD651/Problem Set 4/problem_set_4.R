@@ -109,7 +109,9 @@ a <- ggplot(aes(clarity, mean_price), data = diamonds_mp_by_clarity) +
 b <- ggplot(aes(color, mean_price), data = diamonds_mp_by_color) +
    geom_bar(stat = 'identity')
 grid.arrange(a, b, ncol = 1)
-ggsave('color_and_clarity_groups.png')
+g <- arrangeGrob(a, b, ncol=1)
+ggsave(file='color_and_clarity_groups.png', g)
+
 
 # The Gapminder website contains over 500 data sets with information about
 # the world's population. Your task is to continue the investigation you did at the

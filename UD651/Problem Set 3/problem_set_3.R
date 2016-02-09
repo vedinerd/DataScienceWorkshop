@@ -72,7 +72,10 @@ e <- ggplot(aes(x = price),
    ggtitle('Fair')
 library(gridExtra)
 grid.arrange(a, b, c, d, e, ncol = 1)
-ggsave('price_by_cut.png')
+g <- arrangeGrob(a, b, c, d, e, ncol=1)
+ggsave(file='price_by_cut.png', g)
+
+
 
 # a few statistics by cut
 diamond_cut_group <- group_by(diamonds, cut)
