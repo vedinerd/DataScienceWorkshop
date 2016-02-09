@@ -106,6 +106,8 @@ drop table weather;
 ALTER TABLE weather_grouped RENAME TO weather;
 ALTER TABLE weather ADD CONSTRAINT "PK_weather" PRIMARY KEY (wban, date_time);
 
+-- the weather_station table contains some entries that we have no weather data for; delete them
+delete from weather_station where wban in (select ws.wban from weather_station ws left outer join weather w on ws.wban = w.wban where w.wban is null);
 
 -------------------------------------------------------------------------------
 -- TABLE: PACKAGE_ACTIVITY
