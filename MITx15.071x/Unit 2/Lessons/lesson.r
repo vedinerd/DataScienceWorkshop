@@ -56,7 +56,6 @@ SST <- sum((wineTest$Price - mean(wine$Price))^2)
 SST
 1 - (SSE/SST)
 
-
 baseball <- read.csv('baseball.csv')
 
 str(baseball)
