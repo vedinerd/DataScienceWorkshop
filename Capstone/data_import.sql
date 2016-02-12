@@ -245,3 +245,99 @@ update package_activity
 ALTER TABLE package_activity ADD CONSTRAINT "FK_closest_station_wban" FOREIGN KEY (closest_station_wban) REFERENCES weather_station(wban) ON UPDATE NO ACTION ON DELETE NO ACTION;
 ALTER TABLE package_activity ADD CONSTRAINT "FK_tracking_number" FOREIGN KEY (tracking_number) REFERENCES package(tracking_number) ON UPDATE NO ACTION ON DELETE NO ACTION;
 ALTER TABLE weather ADD CONSTRAINT "FK_wban" FOREIGN KEY (wban) REFERENCES weather_station(wban) ON UPDATE NO ACTION ON DELETE NO ACTION;
+
+-- we also notice that we are missing some weather observations for some of the package activity records at their closest station WBAN
+-- locate these missing records
+select distinct pa.rounded_date_time as date_time, pa.closest_station_wban as wban
+  into missing_weather
+  from package_activity pa
+  left outer join weather w on w.wban = pa.closest_station_wban and w.date_time = pa.rounded_date_time
+ where w.wban is null;
+
+-- clear out the closest station data for the package activities that do not have corresponding weather data
+update package_activity set closest_station_wban = null, station_distance_error = null
+  from missing_weather mw
+ where package_activity.closest_station_wban = mw.wban
+   and package_activity.rounded_date_time = mw.date_time
+   and closest_station_wban is not null;
+
+-- now re-populate the closest_station_wban based on the 2nd closest station
+update package_activity
+   set closest_station_wban =
+       (
+          select ws.wban
+            from weather_station ws
+           order by ST_Distance(ws.geo_location, package_activity.geo_location)
+           limit 1 offset 1
+       )
+  where closest_station_wban is null;
+
+-- perform another round of looking for missing records
+drop table missing_weather;
+select distinct pa.rounded_date_time as date_time, pa.closest_station_wban as wban
+  into missing_weather
+  from package_activity pa
+  left outer join weather w on w.wban = pa.closest_station_wban and w.date_time = pa.rounded_date_time
+ where w.wban is null;
+update package_activity set closest_station_wban = null, station_distance_error = null
+  from missing_weather mw
+ where package_activity.closest_station_wban = mw.wban
+   and package_activity.rounded_date_time = mw.date_time
+   and closest_station_wban is not null;
+update package_activity
+   set closest_station_wban =
+       (
+          select ws.wban
+            from weather_station ws
+           order by ST_Distance(ws.geo_location, package_activity.geo_location)
+           limit 1 offset 2  -- 3rd closest
+       )
+  where closest_station_wban is null;
+
+-- We repeated this process until all package_activity records had a corresponding weather record.  This took 10 rounds, but the vast majority
+-- of records were fixed after two or three iterations.
+
+-- add a station_distance_error column that shows the distance (in meters) between the centroid of the zip code associated with the package activity and the associated weather station
+update package_activity
+   set station_distance_error = ST_Distance(ws.geo_location::geography, package_activity.geo_location::geography)
+  from weather_station ws
+ where ws.wban = package_activity.closest_station_wban
+   and station_distance_error is null;
+
+
+-------------------------------------------------------------------------------
+-- Create some smaller tables that represent a small sample of the data so we can play around with the data in R more quickly and easily.
+-- Create a package_sample table with approximately 50,000 packages, and then create a package_activity_sample table with all activities
+-- that belong to all sampled packages, and a weather_sample table that contains only weather records that are associated with the
+-- records in the package_activity_sample table.
+
+-- package_sample
+SELECT 100.0 * (50000.0 / count(tracking_number)) FROM PACKAGE;  -- 2.166% of the table ~ 50k rows
+SELECT *
+  INTO package_sample
+  FROM package TABLESAMPLE BERNOULLI (2.166);
+
+-- activity_sample
+SELECT pa.*
+  INTO package_activity_sample
+  FROM package_activity pa
+ INNER JOIN package_sample ps on pa.tracking_number = ps.tracking_number;
+
+-- weather_sample
+SELECT w.*
+  INTO weather_sample
+  FROM weather w
+ INNER JOIN package_activity_sample pas
+    ON w.wban = pas.closest_station_wban
+   AND w.date_time = pas.rounded_date_time
+
+select * from package_activity_sample limit 10
+
+
+-- output the CSV files (note we omit some of the columns that we constructed just to help us manage the data, but isn't relevant)
+COPY (SELECT * FROM package_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_sample.csv' WITH CSV;
+COPY (SELECT tracking_number, date_time, activity_code, city, state, zip_code, latitude, longitude, closest_station_wban, rounded_date_time, station_distance_error FROM package_activity_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_activity_sample.csv' WITH CSV;
+COPY (SELECT * FROM weather_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/weather_sample.csv' WITH CSV;
+
+
+
