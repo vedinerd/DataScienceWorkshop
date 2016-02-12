@@ -143,3 +143,12 @@ table(test$responsive)
 
 
 
+library(ROCR)
+
+predROCR <- prediction(pred.prob, test$responsive)
+perfROCR <- performance(predROCR, "tpr", "fpr")
+plot(perfROCR, colorize = TRUE)
+
+performance(predROCR, "auc")@y.values
+
+
