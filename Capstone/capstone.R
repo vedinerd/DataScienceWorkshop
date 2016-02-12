@@ -1,3 +1,5 @@
+library(dplyr)
+
 # read all our data in
 package_file <- unz("sample_data/package_sample.zip", "package_sample.csv")
 package_activity_file <- unz("sample_data/package_activity_sample.zip", "package_activity_sample.csv")
@@ -15,6 +17,10 @@ package_activity$date_time <- strptime(package_activity$date_time, "%Y-%m-%d %H:
 package_activity$rounded_date_time <- strptime(package_activity$rounded_date_time, "%Y-%m-%d %H:%M:%S")
 weather$date_time <- strptime(weather$date_time, "%Y-%m-%d %H:%M:%S")
 
-# is_late, is_late_by_days, is_late_by_time column
-# TODO
+# was_late column
+package$was_late <- package$scheduled_delivery_date_time < package$actual_delivery_date_time
+package$was_late[is.na]
+package <- package %>%
+   mutate(was_late = ifelse(is.na(was_late), TRUE, was_late))
+
 

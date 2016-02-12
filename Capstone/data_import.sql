@@ -324,15 +324,12 @@ SELECT pa.*
  INNER JOIN package_sample ps on pa.tracking_number = ps.tracking_number;
 
 -- weather_sample
-SELECT w.*
+SELECT DISTINCT w.*
   INTO weather_sample
   FROM weather w
  INNER JOIN package_activity_sample pas
     ON w.wban = pas.closest_station_wban
    AND w.date_time = pas.rounded_date_time
-
-select * from package_activity_sample limit 10
-
 
 -- output the CSV files (note we omit some of the columns that we constructed just to help us manage the data, but isn't relevant)
 COPY (SELECT * FROM package_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_sample.csv' WITH CSV;
