@@ -339,5 +339,3 @@ COPY (SELECT * FROM package_sample) To 'D:/Projects/DataScienceWorkshop/Capstone
 COPY (SELECT tracking_number, date_time, activity_code, city, state, zip_code, latitude, longitude, closest_station_wban, rounded_date_time, station_distance_error FROM package_activity_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_activity_sample.csv' WITH CSV;
 COPY (SELECT * FROM weather_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/weather_sample.csv' WITH CSV;
 
-
-

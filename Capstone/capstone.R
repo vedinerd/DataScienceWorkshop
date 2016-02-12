@@ -1,0 +1,20 @@
+# read all our data in
+package_file <- unz("sample_data/package_sample.zip", "package_sample.csv")
+package_activity_file <- unz("sample_data/package_activity_sample.zip", "package_activity_sample.csv")
+weather_file <- unz("sample_data/weather_sample.zip", "weather_sample.csv")
+package <- read.csv(package_file)
+package_activity <- read.csv(package_activity_file)
+weather <- read.csv(weather_file)
+remove(package_file, package_activity_file, weather_file)
+
+# date type conversions
+package$ship_date_time <- strptime(package$ship_date_time, "%Y-%m-%d %H:%M:%S")
+package$scheduled_delivery_date_time <- strptime(package$scheduled_delivery_date_time, "%Y-%m-%d %H:%M:%S")
+package$actual_delivery_date_time <- strptime(package$actual_delivery_date_time, "%Y-%m-%d %H:%M:%S")
+package_activity$date_time <- strptime(package_activity$date_time, "%Y-%m-%d %H:%M:%S")
+package_activity$rounded_date_time <- strptime(package_activity$rounded_date_time, "%Y-%m-%d %H:%M:%S")
+weather$date_time <- strptime(weather$date_time, "%Y-%m-%d %H:%M:%S")
+
+# is_late, is_late_by_days, is_late_by_time column
+# TODO
+
