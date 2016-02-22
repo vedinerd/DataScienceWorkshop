@@ -17,10 +17,3 @@ package_activity$date_time <- strptime(package_activity$date_time, "%Y-%m-%d %H:
 package_activity$rounded_date_time <- strptime(package_activity$rounded_date_time, "%Y-%m-%d %H:%M:%S")
 weather$date_time <- strptime(weather$date_time, "%Y-%m-%d %H:%M:%S")
 
-# was_late column
-package$was_late <- package$scheduled_delivery_date_time < package$actual_delivery_date_time
-package$was_late[is.na]
-package <- package %>%
-   mutate(was_late = ifelse(is.na(was_late), TRUE, was_late))
-
-

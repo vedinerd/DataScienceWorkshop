@@ -304,6 +304,29 @@ update package_activity
  where ws.wban = package_activity.closest_station_wban
    and station_distance_error is null;
 
+-- add a little more information from the original "packages" table -- whether or not the package required intervention to be delivered on time
+-- (due to carrier issues), and then a combined column that attempts to indicate whether or not the package was ultimately delayed or not
+ALTER TABLE package ADD COLUMN required_intervention boolean;
+ALTER TABLE package ADD COLUMN was_delayed boolean;
+update package set required_intervention = true
+from packages p
+where p.trackingnumber = package.tracking_number
+  and p.resolutionid != 1
+  and p.rootcauseid not in (1,2,3,4,5,8,35,36,54,56,57,58,59,60,61,62);
+update package set was_delayed = true
+ where required_intervention = true
+       or
+       (actual_delivery_date_time is not null  -- if we don't have the actual delivery date, we can't proceed
+        and
+        ((date_trunc('day', scheduled_delivery_date_time) = scheduled_delivery_date_time  -- DON'T HAVE time information, just compare date part
+          and
+          date_trunc('day', scheduled_delivery_date_time) < date_trunc('day', actual_delivery_date_time))
+         or
+         (date_trunc('day', scheduled_delivery_date_time) != scheduled_delivery_date_time  -- HAVE time information, compare full dates
+          and
+          scheduled_delivery_date_time < actual_delivery_date_time)));
+update package set was_delayed = false where was_delayed is null;
+
 
 -------------------------------------------------------------------------------
 -- Create some smaller tables that represent a small sample of the data so we can play around with the data in R more quickly and easily.
@@ -332,7 +355,11 @@ SELECT DISTINCT w.*
    AND w.date_time = pas.rounded_date_time
 
 -- output the CSV files (note we omit some of the columns that we constructed just to help us manage the data, but isn't relevant)
-COPY (SELECT * FROM package_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_sample.csv' WITH CSV;
-COPY (SELECT tracking_number, date_time, activity_code, city, state, zip_code, latitude, longitude, closest_station_wban, rounded_date_time, station_distance_error FROM package_activity_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_activity_sample.csv' WITH CSV;
-COPY (SELECT * FROM weather_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/weather_sample.csv' WITH CSV;
+COPY (SELECT * FROM package_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_sample.csv' WITH CSV HEADER;
+COPY (SELECT tracking_number, date_time, activity_code, city, state, zip_code, latitude, longitude, closest_station_wban, rounded_date_time, station_distance_error FROM package_activity_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_activity_sample.csv' WITH CSV HEADER;
+COPY (SELECT * FROM weather_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/weather_sample.csv' WITH CSV HEADER;
 
+-- output the full CSV files
+COPY (SELECT * FROM package) To 'D:/Projects/DataScienceWorkshop/Capstone/data/package.csv' WITH CSV HEADER;
+COPY (SELECT tracking_number, date_time, activity_code, city, state, zip_code, latitude, longitude, closest_station_wban, rounded_date_time, station_distance_error FROM package_activity) To 'D:/Projects/DataScienceWorkshop/Capstone/data/package_activity.csv' WITH CSV HEADER;
+COPY (SELECT * FROM weather) To 'D:/Projects/DataScienceWorkshop/Capstone/data/weather.csv' WITH CSV HEADER;
