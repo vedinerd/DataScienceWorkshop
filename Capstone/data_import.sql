@@ -59,9 +59,9 @@ select trim(upper(whr.wban)),
         substring(time from 3 for 2) || ':00' || ws.timezone)::timestamp with time zone,
        (case when trim(visibility) = '' or trim(visibility) = 'M' then null else visibility::numeric(18,5) end),
        trim(upper(weathertype)),
-       (case when trim(drybulbfarenheit) = '' or trim(drybulbfarenheit) = 'M' then null else drybulbfarenheit::numeric(18,5) end),
-       (case when trim(wetbulbfarenheit) = '' or trim(wetbulbfarenheit) = 'M' then null else wetbulbfarenheit::numeric(18,5) end),
-       (case when trim(dewpointfarenheit) = '' or trim(dewpointfarenheit) = 'M' then null else dewpointfarenheit::numeric(18,5) end),
+       (case when trim(drybulbfahrenheit) = '' or trim(drybulbfahrenheit) = 'M' then null else drybulbfahrenheit::numeric(18,5) end),
+       (case when trim(wetbulbfahrenheit) = '' or trim(wetbulbfahrenheit) = 'M' then null else wetbulbfahrenheit::numeric(18,5) end),
+       (case when trim(dewpointfahrenheit) = '' or trim(dewpointfahrenheit) = 'M' then null else dewpointfahrenheit::numeric(18,5) end),
        (case when trim(relativehumidity) = '' or trim(relativehumidity) = 'M' then null else relativehumidity::numeric(18,5) end),
        (case when trim(windspeed) = '' or trim(windspeed) = 'M' then null else windspeed::numeric(18,5) end),
        (case when trim(winddirection) = '' or trim(winddirection) = 'M' or trim(winddirection) = 'VR' then null else winddirection::numeric(18,5) end),
@@ -87,9 +87,9 @@ select wban,
        rounded_date_time as date_time,
        avg(visibility)::numeric(5,2) as visibility,
        max(weather_type) as weather_type,
-       avg(dry_bulb_celsius)::numeric(5,1) as dry_bulb_celsius,
-       avg(wet_bulb_celsius)::numeric(5,1) as wet_bulb_celsius,
-       avg(dew_point_celsius)::numeric(5,1) as dew_point_celsius,
+       avg(dry_bulb_fahrenheit)::numeric(5,1) as dry_bulb_fahrenheit,
+       avg(wet_bulb_fahrenheit)::numeric(5,1) as wet_bulb_fahrenheit,
+       avg(dew_point_fahrenheit)::numeric(5,1) as dew_point_fahrenheit,
        avg(relative_humidity)::numeric(4,0) as relative_humidity,
        avg(wind_speed)::numeric(4,0) as wind_speed,
        avg(wind_direction)::numeric(3,0) as wind_direction,
@@ -108,6 +108,7 @@ ALTER TABLE weather ADD CONSTRAINT "PK_weather" PRIMARY KEY (wban, date_time);
 
 -- the weather_station table contains some entries that we have no weather data for; delete them
 delete from weather_station where wban in (select ws.wban from weather_station ws left outer join weather w on ws.wban = w.wban where w.wban is null);
+
 
 -------------------------------------------------------------------------------
 -- TABLE: PACKAGE_ACTIVITY
@@ -306,13 +307,15 @@ update package_activity
 
 -- add a little more information from the original "packages" table -- whether or not the package required intervention to be delivered on time
 -- (due to carrier issues), and then a combined column that attempts to indicate whether or not the package was ultimately delayed or not
+-- and then finally a column that reveals whether or not the package was delayed due to weather issues
 ALTER TABLE package ADD COLUMN required_intervention boolean;
 ALTER TABLE package ADD COLUMN was_delayed boolean;
+ALTER TABLE package ADD COLUMN was_delayed_weather boolean;
 update package set required_intervention = true
-from packages p
-where p.trackingnumber = package.tracking_number
-  and p.resolutionid != 1
-  and p.rootcauseid not in (1,2,3,4,5,8,35,36,54,56,57,58,59,60,61,62);
+  from packages p
+ where p.trackingnumber = package.tracking_number
+   and p.resolutionid != 1
+   and p.rootcauseid not in (1,2,3,4,5,8,35,36,54,56,57,58,59,60,61,62);
 update package set was_delayed = true
  where required_intervention = true
        or
@@ -326,6 +329,12 @@ update package set was_delayed = true
           and
           scheduled_delivery_date_time < actual_delivery_date_time)));
 update package set was_delayed = false where was_delayed is null;
+update package set was_delayed_weather = true
+  from packages p
+ where p.trackingnumber = package.tracking_number
+   and was_delayed = true
+   and (p.resolutionid = 12 or p.rootcauseid = 7);
+update package set was_delayed_weather = false where was_delayed_weather is null;
 
 
 -------------------------------------------------------------------------------
@@ -347,12 +356,6 @@ SELECT pa.*
  INNER JOIN package_sample ps on pa.tracking_number = ps.tracking_number;
 
 -- weather_sample
-SELECT DISTINCT w.*
-  INTO weather_sample
-  FROM weather w
- INNER JOIN package_activity_sample pas
-    ON w.wban = pas.closest_station_wban
-   AND w.date_time = pas.rounded_date_time
 
 -- output the CSV files (note we omit some of the columns that we constructed just to help us manage the data, but isn't relevant)
 COPY (SELECT * FROM package_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_sample.csv' WITH CSV HEADER;
@@ -363,3 +366,5 @@ COPY (SELECT * FROM weather_sample) To 'D:/Projects/DataScienceWorkshop/Capstone
 COPY (SELECT * FROM package) To 'D:/Projects/DataScienceWorkshop/Capstone/data/package.csv' WITH CSV HEADER;
 COPY (SELECT tracking_number, date_time, activity_code, city, state, zip_code, latitude, longitude, closest_station_wban, rounded_date_time, station_distance_error FROM package_activity) To 'D:/Projects/DataScienceWorkshop/Capstone/data/package_activity.csv' WITH CSV HEADER;
 COPY (SELECT * FROM weather) To 'D:/Projects/DataScienceWorkshop/Capstone/data/weather.csv' WITH CSV HEADER;
+
+
