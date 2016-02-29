@@ -1,19 +1,68 @@
+-------------------------------------------------------------------------------
+
 1) What is the problem you want to solve?
 
-I would like to be able to provide an algorithm for identifying small package shipments that are at a higher risk of failing to be delivered on time based on the forcasted weather along the delivery route.
+I would like to be able to provide an algorithm for identifying small package 
+shipments that are at a higher risk of failing to be delivered on time based 
+on the forecasted weather along the delivery route.
 
-2) Who is your client and why do they care about this problem? In other words, what will your client DO or DECIDE based on your analysis that they wouldn’t have otherwise?
+-------------------------------------------------------------------------------
 
-I am building this algorithm for a current client, who has a specific need for integrating weather data forcasting into their tool for predicting package deliverability.  This algorithm, assuming it generates useful data, will be added to their existing toolset to provide further warning for packages that appear to be at risk of being delivered late.
+2) Who is your client and why do they care about this problem? In other words, 
+what will your client DO or DECIDE based on your analysis that they wouldn’t 
+have otherwise?
+
+I am building this algorithm for a current client, who has a specific need 
+for integrating weather data forecasting into their tool for predicting 
+package deliverability.  This algorithm, assuming it generates useful data, 
+will be added to their existing toolset to provide further warning for 
+packages that appear to be at risk of being delivered late.
+
+-------------------------------------------------------------------------------
 
 3) What data are you going to use for this? How will you acquire this data?
 
-The client I am building this algorithm for will provide the package data.  It consists of several million packages from the second half of 2015 and their delivered status, as well as a list of package activities (essentially the data you get when you "track" a package on ups.com, fedex.com, or usps.com) for each package.  I will also get actual weather data for the second half of 2015 from NOAA (Quality Controlled Local Climatological Data, available here: http://www.ncdc.noaa.gov/orders/qclcd/).  This data can be cross referenced with the package activity data through the geo-location data present in the package activity data, but this process will involve some data wrangling.
+The client I am building this algorithm for will provide the package data.  It 
+consists of several million packages from the second half of 2015 and their 
+delivered status, as well as a list of package activities (essentially the 
+data you get when you "track" a package on ups.com, fedex.com, or usps.com) 
+for each package.  I will also get actual weather data for the second half of 
+2015 from NOAA (Quality Controlled Local Climatological Data, available here: 
+http://www.ncdc.noaa.gov/orders/qclcd/).  This data can be cross referenced 
+with the package activity data through the geo-location data present in the 
+package activity data, but this process will involve some data wrangling.
 
-4) In brief, outline your approach to solving this problem (knowing that this might change later).
+-------------------------------------------------------------------------------
 
-The first step will be to import all the data (the package data, the package activity data, the weather data, and some data that will help connect these data sets, such as a table of zip codes and their centroid longitude/latitude pairs).  Once the data is in place, it will have to be wrangled into a useable form, which aside from basic cleaning tasks will primarily involve locating the nearest (in time and space) weather observation for each package activity record.  The package table will have a binary "was late due to weather" indicator, which will be the value I will want to predict, and yet I need to predict this based on multiple observations per package (each associated entry in the package activity data set), and so I will want to aggregate the package activity data per package in some fashion.  At that stage I will run several different models on the data, such as multiple linear regression, or a decision tree, to try to figure out which model has the best predictive power.  Because a package being late based on weather is not going to be simple to predict and because such a package is a rarity among the millions of packages being analyzed, I suspect that whatever algorithm generated will not beat the null prediction that no packages are late due to weather in raw accuracy.
+4) In brief, outline your approach to solving this problem (knowing that this 
+might change later).
 
-5) What are your deliverables? Typically, this would include code, along with a paper and/or a slide deck.
+The first step will be to import all the data (the package data, the package 
+activity data, the weather data, and some data that will help connect these 
+data sets, such as a table of zip codes and their centroid longitude/latitude 
+pairs).  Once the data is in place, it will have to be wrangled into a useable 
+form, which aside from basic cleaning tasks will primarily involve locating 
+the nearest (in time and space) weather observation for each package activity 
+record.  The package table will have a binary "was late due to weather" 
+indicator, which will be the value I will want to predict, and yet I need to 
+predict this based on multiple observations per package (each associated entry 
+in the package activity data set), and so I will want to aggregate the package 
+activity data per package in some fashion.  At that stage I will run several 
+different models on the data, such as multiple linear regression, or a 
+decision tree, to try to figure out which model has the best predictive 
+power.  Because a package being late based on weather is not going to be 
+simple to predict and because such a package is a rarity among the millions of 
+packages being analyzed, I suspect that whatever algorithm generated will not 
+beat the null prediction that no packages are late due to weather in raw 
+accuracy.
 
-I will deliver the R and SQL code to generate the results, as well as a paper describing the results and a slide deck summary.  Only a random subset of the actual data will be provided as it is a large data set.
+-------------------------------------------------------------------------------
+
+5) What are your deliverables? Typically, this would include code, along with 
+a paper and/or a slide deck.
+
+I will deliver the R and SQL code to generate the results, as well as a paper 
+describing the results and a slide deck summary.  Only a random subset of the 
+actual data will be provided as it is a large data set.
+
+-------------------------------------------------------------------------------
