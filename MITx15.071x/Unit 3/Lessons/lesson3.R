@@ -26,7 +26,7 @@ tapply(predictTrain, qualityTrain$PoorCare, mean)
 predictTest = predict(QualityLog, type="response", newdata=qualityTest)
 
 ROCRpredTest = prediction(predictTest, qualityTest$PoorCare)
-
+?prediction
 auc = as.numeric(performance(ROCRpredTest, "auc")@y.values)
 auc
 

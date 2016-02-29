@@ -291,7 +291,7 @@ update package_activity
           select ws.wban
             from weather_station ws
            order by ST_Distance(ws.geo_location, package_activity.geo_location)
-           limit 1 offset 2  -- 3rd closest
+           limit 1 offset 11  -- 3rd closest
        )
   where closest_station_wban is null;
 
@@ -336,6 +336,15 @@ update package set was_delayed_weather = true
    and (p.resolutionid = 12 or p.rootcauseid = 7);
 update package set was_delayed_weather = false where was_delayed_weather is null;
 
+-- I'd prefer to work in celsius, so convert the three fahrenheit columns to celsius columns
+begin transaction;
+update weather
+   set dry_bulb_fahrenheit = (dry_bulb_fahrenheit - 32.0) / 1.8,
+       wet_bulb_fahrenheit = (wet_bulb_fahrenheit - 32.0) / 1.8,
+       dew_point_fahrenheit = (wet_bulb_fahrenheit - 32.0) / 1.8;
+alter table weather rename column dry_bulb_fahrenheit to dry_bulb_celsius;
+alter table weather rename column wet_bulb_fahrenheit to wet_bulb_celsius;
+alter table weather rename column dew_point_fahrenheit to dew_point_celsius;
 
 -------------------------------------------------------------------------------
 -- Create some smaller tables that represent a small sample of the data so we can play around with the data in R more quickly and easily.
@@ -356,6 +365,12 @@ SELECT pa.*
  INNER JOIN package_sample ps on pa.tracking_number = ps.tracking_number;
 
 -- weather_sample
+SELECT DISTINCT w.*
+  INTO weather_sample
+  FROM weather w
+ INNER JOIN package_activity_sample pas
+    ON w.wban = pas.closest_station_wban
+   AND w.date_time = pas.rounded_date_time;
 
 -- output the CSV files (note we omit some of the columns that we constructed just to help us manage the data, but isn't relevant)
 COPY (SELECT * FROM package_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_sample.csv' WITH CSV HEADER;
