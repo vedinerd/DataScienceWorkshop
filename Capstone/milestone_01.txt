@@ -1,0 +1,35 @@
+INTRODUCTION
+-------------------------------------------------------------------------------
+The impact of weather on small package shipment deliverability is of great concern to my client.  To that end, an algorithm will be developed to provide some predictive capability to my client, using weather forecast data combined with package route data (based on origin and destination addresses).  My client has provided millions of records of actual package data, and that data will be combined with publically available weather data and analyzed using several statistical models to help human operators classify packages as more or less likely to be delivered late due to weather.
+
+INITIAL DATA
+-------------------------------------------------------------------------------
+The data sets provided by my client contain several million packages, each with roughly 5-10 "package activity" records (essentially the same as the data you would see when "tracking" a package on ups.com or fedex.com).  My client also provided a table of United States ZIP codes, and the centroid latitude / longitude pair for each ZIP code. I was able to locate an extensive public data set containing weather observations from the NOAA (Quality Controlled Local Climatological Data [1]).  This data set contained (at least) hourly observations from thousands of weather stations across the United States, as well as a separate smaller data set containing the geographic location of each weather station making the observation.
+
+DATA FIELDS
+-------------------------------------------------------------------------------
+The package data provided all necessary information to determine whether or not the package was late, and if it was late, whether or not the package was late due to issues with weather.  The primary identifier used to link the packages with the package activities was the package tracking number, which is unique among shipping carriers and the six-month or so time span we were dealing with.  Each package activity record contained the ZIP code the activity occurred in, which, combined with the ZIP code table provided by my client, was used to positively link each package activity record with the closest weather observation in time and space.
+
+LIMITATIONS
+-------------------------------------------------------------------------------
+The provided package data set had several limitations.  Whether or not a package was late due to weather was able to be determined with a good deal of accuracy, but there were still some assumptions that went into that calculation.  There were also packages and weather observations with missing data, but that data appeared to be missing data unrelated to any issue correlated with what we were trying to determine, so most of the package and weather records with missing relevant data were simply deleted.  There was enough data without the few records with missing data.  The remaining data was filled in either with an average where appropriate, or with a calculation, in the case of weather data.  For example, where we had both dry and wet bulb temperature but no relative humidity we could apply a well-known calculation to get an accurate estimate of relative humidity.
+
+DATA CLEANING AND WRANGLING
+-------------------------------------------------------------------------------
+The data required extensive cleaning and wrangling, and this process is documented in the "data_import.sql" file (most cleaning and wrangling was performed in PostgreSQL), and to a lesser extent, in the "capstone.R" file.  The raw data provided by my client contained many proprietary fields which were not relevant to the problem being addressed.  The package activity data also had to be associated with the nearest weather observation, which involved generating the centroid latitude / longitude pair for each package activity observation and mathematically determining which weather station was closest.  The PostGIS [2] module for the PostgreSQL database was used for these calculations.  Many other cleaning and wrangling steps had to be performed, as documented in the previously mentioned files.
+
+The final wrangling step performed was due to the fact that the weather data is connected to the package activity data, and the variable to be predicted is instead associated with the package table.  So in order to apply the simple predictive models I wanted to start with, I needed to join the weather data set, the package activity data set, and the package data set together and group by the tracking number.  In doing so, I ended up with one table that contains the mean, maximum, and minimum of each relevant weather observation for each package.
+
+PRELIMINARY FINDINGS
+-------------------------------------------------------------------------------
+As documented (in preliminary form) in the "capstone.R" file, some early findings show a correlation between several aggregated weather variables and the "late due to weather" indicator.  However, the accuracy of these models is poor.  This appears to be due to the fact that we have a large number of observations and are trying to predict a rare event, that is a package being late due to weather issues.  So the accuracy of our model is poorer than our null prediction of no packages being late due to weather -- this is such a rare event that a model would need very high accuracy to beat the null prediction.  However, because such a null model is obviously of no use to my client, even a model with poorer accuracy might still be preferable.
+
+FUTURE APPROACHES
+-------------------------------------------------------------------------------
+There are two primary areas that will be explored.  The first is to better the possibly naive first approach at aggregating the data when the package and package activity tables were combined.  That aggregation left me with the mean, minimum, and maximum of each variable per package, as seen across all package activity records for that package.  That aggregation eliminated some information that may still be useful.
+
+Second, other predictive models should be explored.  I have begun to explore a decision tree model, but have not yet had a chance to explore it fully.  It is also possible that combining several models would yield a better result.
+
+-------------------------------------------------------------------------------
+[1] http://www.ncdc.noaa.gov/orders/qclcd/
+[2] http://postgis.net/
