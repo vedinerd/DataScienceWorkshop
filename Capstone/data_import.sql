@@ -352,11 +352,12 @@ alter table weather rename column dew_point_fahrenheit to dew_point_celsius;
 -- that belong to all sampled packages, and a weather_sample table that contains only weather records that are associated with the
 -- records in the package_activity_sample table.
 
+-- 25% OF DATA
+
 -- package_sample
-SELECT 100.0 * (50000.0 / count(tracking_number)) FROM PACKAGE;  -- 2.166% of the table ~ 50k rows
 SELECT *
   INTO package_sample
-  FROM package TABLESAMPLE BERNOULLI (2.166);
+  FROM package TABLESAMPLE BERNOULLI (25.00);
 
 -- activity_sample
 SELECT pa.*
@@ -376,6 +377,8 @@ SELECT DISTINCT w.*
 COPY (SELECT * FROM package_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_sample.csv' WITH CSV HEADER;
 COPY (SELECT tracking_number, date_time, activity_code, city, state, zip_code, latitude, longitude, closest_station_wban, rounded_date_time, station_distance_error FROM package_activity_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/package_activity_sample.csv' WITH CSV HEADER;
 COPY (SELECT * FROM weather_sample) To 'D:/Projects/DataScienceWorkshop/Capstone/sample_data/weather_sample.csv' WITH CSV HEADER;
+
+-- 100% OF DATA
 
 -- output the full CSV files
 COPY (SELECT * FROM package) To 'D:/Projects/DataScienceWorkshop/Capstone/data/package.csv' WITH CSV HEADER;
