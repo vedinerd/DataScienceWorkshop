@@ -1,12 +1,12 @@
 library(dplyr)
 library(caTools)
 library(ROCR)
-library(ggplot2)
 library(gridExtra) 
 library(GGally)
 library(randomForest)
 library(rpart)
 library(rpart.plot)
+library(ggplot2)
 
 ################################################################################
 # prepare data
@@ -47,14 +47,13 @@ package_activity_weather_summary <-
    package_activity_weather_summary %>%
    left_join(package, by = c("tracking_number" = "tracking_number"))
 
-# convert the two boolean columns into binary number columns
-#package_activity_weather_summary$was_delayed <- as.integer(as.integer(package_activity_weather_summary$was_delayed) - 1)
-#package_activity_weather_summary$was_delayed_weather <- as.integer(as.integer(package_activity_weather_summary$was_delayed_weather) - 1)
-
 # split the data into training and testing sets (60% training)
 split <- sample.split(package_activity_weather_summary$was_delayed, 0.60)
 package_train <- subset(package_activity_weather_summary, split == TRUE)
 package_test <- subset(package_activity_weather_summary, split == FALSE)
+
+# clean up
+remove(split, package, package_activity, weather, package_activity_weather, package_activity_weather_summary)
 
 # if we assume no packages delayed due to weather as a baseline prediction, we get:
 table(package_train$was_delayed_weather)
@@ -110,7 +109,7 @@ for(i in names(package_train[c(3:11, 13:21, 23:31)])) {
 }
 
 ################################################################################
-# try logistic multiple regression
+# logistic multiple regression
 
 # first look for highly correlated variables to get rid of them right off the bat
 correlation <- cor(package_train[sapply(package_train, is.numeric)])
@@ -127,7 +126,7 @@ logistic_model_weather <-
           visibility_min + dry_bulb_celsius_min + relative_humidity_min + wind_speed_min + station_pressure_min,
        data = package_train,
        family = "binomial")
-summary(logistic_model_weather) # AIC: 23663
+summary(logistic_model_weather) # AIC: 23471
 
 # after paring all the irrelevant variables down, we're left with this model:
 logistic_model_weather <-
@@ -137,174 +136,39 @@ logistic_model_weather <-
           visibility_min + dry_bulb_celsius_min + relative_humidity_min + wind_speed_min + station_pressure_min,
        data = package_train,
        family = "binomial")
-summary(logistic_model_weather) # AIC: 23661
+summary(logistic_model_weather) # AIC: 23469
 
 # Calculate the AUC for the training data
 logistic_model_predict_train <- predict(logistic_model_weather, type = "response", newdata = package_train)
 logistic_model_prediction_train <- prediction(logistic_model_predict_train, package_train$was_delayed_weather)
 as.numeric(performance(logistic_model_prediction_train, "auc")@y.values) # 0.795
 logistic_model_performance_tpr_fpr_train <- performance(logistic_model_prediction_train, "tpr", "fpr")
+png(filename = "logistic-multiple-regression-roc-train.png", width = 10, height = 8, units = "in", res = 300)
 plot(logistic_model_performance_tpr_fpr_train,
      colorize = TRUE,
      print.cutoffs.at = seq(0.000, 0.020, 0.001),
      text.adj=c(-0.2, 1.7),
      cutoff.label.function=function(x) { round(x, 3) },
-     title(main = paste("Logistic Multiple Regression (Training Data) ROC (AUC ", round(as.numeric(performance(logistic_model_prediction_train, "auc")@y.values), 3), ")", sep = "")))
+     main = paste("Logistic Multiple Regression (Training Data) ROC (AUC ", round(as.numeric(performance(logistic_model_prediction_train, "auc")@y.values), 3), ")", sep = ""))
+dev.off()
 
 # Feed in the test data.
 logistic_model_predict_test <- predict(logistic_model_weather, type = "response", newdata = package_test)
 logistic_model_prediction_test <- prediction(logistic_model_predict_test, package_test$was_delayed_weather)
 as.numeric(performance(logistic_model_prediction_test, "auc")@y.values) # 0.790
 logistic_model_performance_tpr_fpr_test <- performance(logistic_model_prediction_test, "tpr", "fpr")
+png(filename = "logistic-multiple-regression-roc-test.png", width = 10, height = 8, units = "in", res = 300)
 plot(logistic_model_performance_tpr_fpr_test,
      colorize = TRUE,
      print.cutoffs.at = seq(0.000, 0.020, 0.001),
      text.adj=c(-0.2, 1.7),
      cutoff.label.function=function(x) { round(x, 3) },
-     title(main = paste("Logistic Multiple Regression (Test Data) ROC (AUC ", round(as.numeric(performance(logistic_model_prediction_test, "auc")@y.values), 3), ")", sep = "")))
-
-
-
-
-logistic_model_performance_ppv <- performance(logistic_model_prediction, "ppv")
-logistic_model_performance_npv <- performance(logistic_model_prediction, "npv")
-logistic_model_performance_acc <- performance(logistic_model_prediction, "acc")
-logistic_model_performance_tpr <- performance(logistic_model_prediction, "tpr")
-logistic_model_performance_tnr <- performance(logistic_model_prediction, "tnr")
-
-plot(logistic_model_performance_ppv, xlim = c(0.0, 0.02), ylim = c(0.00, 0.04))
-plot(logistic_model_performance_npv, xlim = c(0.0, 0.02))
-plot(logistic_model_performance_acc, xlim = c(0.0, 0.02))
-plot(logistic_model_performance_tpr, xlim = c(0.0, 0.02))
-plot(logistic_model_performance_tnr, xlim = c(0.0, 0.02))
-
-
-table(package_test$was_delayed_weather, logistic_model_predict > 0.02)
-
-
-tn  fp
-fn  tp
-
-10696  1413
-47     47
-
-
-accuracy: (10696+47)/(10696+1413+47+47) : 0.880
-ppv: TP / (TP + FP) : 47 / (47+1413): 0.032
-
-
-# search the space from 0.020 to 0.001 and build a table of some measurements of quality to help decide the best threshold
-search <- seq(0.020, 0.001, -0.001)
-threshold_data <- data.frame(numeric(0), numeric(0), numeric(0), numeric(0), numeric(0), numeric(0))
-for (i in 1:20) {
-   confusion <- table(package_test$was_delayed_weather, logistic_model_predict > search[i])
-   tn <- confusion[1,1]
-   tp <- confusion[2,2]
-   fn <- confusion[2,1]
-   fp <- confusion[1,2]
-   accuracy <- (tn+tp)/(tn+tp+fn+fp)
-   sensitivity <- tp/(tp+fn)
-   specificity <- tn/(tn+fp)
-   pos_pred_value <- tp/(tp+fp)
-   neg_pred_value <- tn/(tn+fn)
-   threshold_data <- rbind(threshold_data, c(search[i], accuracy, sensitivity, specificity, pos_pred_value, neg_pred_value))
-}
-colnames(threshold_data) <- c("threshold", "accuracy", "sensitivity", "specificity", "pos_pred_value", "neg_pred_value")
-grid.arrange(
-   ggplot(data = threshold_data, aes(x = threshold)) + geom_line(aes(y = accuracy)) + scale_x_continuous(breaks = seq(0.0, 0.02, 0.002)),
-   ggplot(data = threshold_data, aes(x = threshold)) + geom_line(aes(y = sensitivity)) + scale_x_continuous(breaks = seq(0.0, 0.02, 0.002)),
-   ggplot(data = threshold_data, aes(x = threshold)) + geom_line(aes(y = specificity)) + scale_x_continuous(breaks = seq(0.0, 0.02, 0.002)),
-   ggplot(data = threshold_data, aes(x = threshold)) + geom_line(aes(y = pos_pred_value)) + scale_x_continuous(breaks = seq(0.0, 0.02, 0.002)),
-   ggplot(data = threshold_data, aes(x = threshold)) + geom_line(aes(y = neg_pred_value)) + scale_x_continuous(breaks = seq(0.0, 0.02, 0.002)))
-   
-
-
-0.004
-
-
-   summary(logistic_model_performance)
-   
-   ggplot(data = logistic_model_performance, aes(x = "False positive rate"))
-   
-
-logistic_model_performance@x.values
-logistic_model_performance@y.values
-logistic_model_performance@alpha.values
-
-
-
-plot(logistic_model_performance, colorize = TRUE, print.cutoffs.at = seq(0.000, 0.020, 0.001), text.adj=c(-0.2, 1.7), cutoff.label.function=function(x) { round(x, 3) })
+     main = paste("Logistic Multiple Regression (Test Data) ROC (AUC ", round(as.numeric(performance(logistic_model_prediction_test, "auc")@y.values), 3), ")", sep = ""))
+dev.off()
 
 # with this information, and given that the problem set wants to minimize the false negative rate,
 # choose 0.018 as the threshold, giving:
-table(package_test$was_delayed_weather, predict_weather_02 > 0.018)
-
-
-
-
-
-predict_weather_01 <- predict(logistic_model_weather_01, type = "response", newdata = package_test)
-predict_test_weather_01 <- prediction(predict_weather_01, package_test$was_delayed_weather)
-as.numeric(performance(predict_test_weather_01, "auc")@y.values) # 0.8187
-predict_test_perf_weather_01 <- performance(predict_test_weather_01, "tpr", "fpr")
-plot(predict_test_perf_weather_01, colorize = TRUE, print.cutoffs.at = seq(0.000, 0.030, 0.001), text.adj=c(-0.2, 1.7), cutoff.label.function=function(x) { round(x, 3) })
-
-
-
-
-
-package_train[c(3:11, 13:21, 23:31)]
-
-package_activity <- read.csv(package_activity_file)
-
-
-
-# after paring all the irrelevant variables down, we're left with this model:
-logistic_model_weather_02 <-
-   glm(was_delayed_weather ~
-       visibility_mean + dry_bulb_fahrenheit_mean + 
-       wind_speed_mean +
-       hourly_precip_mean + visibility_max +
-       relative_humidity_max +
-       hourly_precip_max + visibility_min +
-       wet_bulb_fahrenheit_min + relative_humidity_min +
-       wind_speed_min + station_pressure_min,
-    data = package_train,
-    family = "binomial")
-summary(logistic_model_weather_02) # AIC: 2343.8
-predict_weather_02 <- predict(logistic_model_weather_02, type = "response", newdata = package_test)
-predict_test_weather_02 <- prediction(predict_weather_02, package_test$was_delayed_weather)
-as.numeric(performance(predict_test_weather_02, "auc")@y.values) # 0.8164
-predict_test_perf_weather_02 <- performance(predict_test_weather_02, "tpr", "fpr")
-plot(predict_test_perf_weather_02, colorize = TRUE, print.cutoffs.at = seq(0.000, 0.030, 0.001), text.adj=c(-0.2, 1.7), cutoff.label.function=function(x) { round(x, 3) })
-
-# search the space from 0.030 to 0.001 and build a table of some measurements of quality to help decide the best threshold
-search <- seq(0.030, 0.001, -0.001)
-threshold_data <- data.frame(numeric(0), numeric(0), numeric(0), numeric(0))
-for (i in 1:30) {
-   confusion <- table(package_test$was_delayed_weather, predict_weather_02 > search[i])
-   tn <- confusion[1,1]
-   tp <- confusion[2,2]
-   fn <- confusion[1,2]
-   fp <- confusion[2,1]
-   accuracy <- (tn+tp)/(tn+tp+fn+fp)
-   sensitivity <- tp/(tp+fn)
-   specificity <- tn/(tn+fp)
-   pos_pred_value <- tp/(tp+fp)
-   neg_pred_value <- tn/(tn+fn)
-   threshold_data <- rbind(threshold_data, c(search[i], accuracy, sensitivity, specificity, pos_pred_value, neg_pred_value))
-}
-colnames(threshold_data) <- c("threshold", "accuracy", "sensitivity", "specificity", "pos_pred_value", "neg_pred_value")
-grid.arrange(
-   ggplot(data = threshold_data, aes(x = threshold)) + geom_line(aes(y = accuracy)),
-   ggplot(data = threshold_data, aes(x = threshold)) + geom_line(aes(y = sensitivity)),
-   ggplot(data = threshold_data, aes(x = threshold)) + geom_line(aes(y = specificity)),
-   ggplot(data = threshold_data, aes(x = threshold)) + geom_line(aes(y = pos_pred_value)),
-   ggplot(data = threshold_data, aes(x = threshold)) + geom_line(aes(y = neg_pred_value)))
-
-# with this information, and given that the problem set wants to minimize the false negative rate,
-# choose 0.018 as the threshold, giving:
-table(package_test$was_delayed_weather, predict_weather_02 > 0.018)
+table(package_test$was_delayed_weather, logistic_model_predict_test > 0.05)
 
 ################################################################################
 # decision tree
@@ -340,25 +204,31 @@ package_tree <- rpart(
 package_tree_predict_test <- predict(package_tree, newdata = package_test)
 package_tree_prediction_test <- prediction(package_tree_predict_test[,2], package_test$was_delayed_weather)
 as.numeric(performance(package_tree_prediction_test, "auc")@y.values) # 0.849
+pdf(file = "decision-tree-plot.pdf", width = 10, height = 8)
 prp(package_tree)
+dev.off()
 package_tree_perf_test <- performance(package_tree_prediction_test, "tpr", "fpr")
+png(filename = "decision-tree-roc-test.png", width = 10, height = 8, units = "in", res = 300)
 plot(package_tree_perf_test,
      colorize = TRUE,
      print.cutoffs.at = seq(0.000, 0.020, 0.001),
      text.adj=c(-0.2, 1.7), cutoff.label.function=function(x) { round(x, 3) },
-     title(main = paste("Decision Tree (Testing Data) ROC (AUC ", round(as.numeric(performance(package_tree_prediction_test, "auc")@y.values), 3), ")", sep = "")))
+     main = paste("Decision Tree (Testing Data) ROC (AUC ", round(as.numeric(performance(package_tree_prediction_test, "auc")@y.values), 3), ")", sep = ""))
+dev.off()
 
 # This tree is very complicated; seems like it might be over-fit.  What is the AUC when used on the training data?
 package_tree_predict_train <- predict(package_tree, newdata = package_train)
 package_tree_prediction_train <- prediction(package_tree_predict_train[,2], package_train$was_delayed_weather)
 as.numeric(performance(package_tree_prediction_train, "auc")@y.values) # 0.868
 package_tree_perf_train <- performance(package_tree_prediction_train, "tpr", "fpr")
+png(filename = "decision-tree-roc-train.png", width = 10, height = 8, units = "in", res = 300)
 plot(package_tree_perf_train,
      colorize = TRUE,
      print.cutoffs.at = seq(0.000, 0.020, 0.001),
      text.adj=c(-0.2, 1.7),
      cutoff.label.function=function(x) { round(x, 3) },
-     title(main = paste("Decision Tree (Training Data) ROC (AUC ", round(as.numeric(performance(package_tree_prediction_train, "auc")@y.values), 3), ")", sep = "")))
+     main = paste("Decision Tree (Training Data) ROC (AUC ", round(as.numeric(performance(package_tree_prediction_train, "auc")@y.values), 3), ")", sep = ""))
+dev.off()
 
 # The tree is very complicated -- it seems to be over-fit.  However, we see an AUC of 0.868 when using the
 # training data and an AUC of 0.849 when using the testing data, which seems reasonable.  The data is a little
@@ -367,30 +237,40 @@ plot(package_tree_perf_train,
 
 # Still, let's see if we can prune the tree to reduce the complexity.  Prune the tree at the minimum 'xerror' point.
 printcp(package_tree)
+png(filename = "decision-tree-complexity-parameter.png", width = 10, height = 8, units = "in", res = 300)
 plotcp(package_tree)
+dev.off()
 package_tree_pruned <- prune(package_tree, cp = package_tree$cptable[which.min(package_tree$cptable[,"xerror"]),"CP"])
 printcp(package_tree_pruned)
+png(filename = "decision-tree-complexity-parameter-pruned.png", width = 10, height = 8, units = "in", res = 300)
 plotcp(package_tree_pruned)
+dev.off()
 package_tree_predict_pruned_test <- predict(package_tree_pruned, newdata = package_test)
 package_tree_prediction_pruned_test <- prediction(package_tree_predict_pruned_test[,2], package_test$was_delayed_weather)
-as.numeric(performance(package_tree_prediction_pruned_test, "auc")@y.values) # 0.824
+as.numeric(performance(package_tree_prediction_pruned_test, "auc")@y.values) # 0.814
 package_tree_perf_pruned_test <- performance(package_tree_prediction_pruned_test, "tpr", "fpr")
+png(filename = "decision-tree-roc-test-pruned.png", width = 10, height = 8, units = "in", res = 300)
 plot(package_tree_perf_pruned_test,
      colorize = TRUE,
      print.cutoffs.at = seq(0.000, 0.020, 0.001),
      text.adj=c(-0.2, 1.7), cutoff.label.function=function(x) { round(x, 3) },
-     title(main = paste("Pruned Decision Tree (Testing Data) ROC (AUC ", round(as.numeric(performance(package_tree_prediction_pruned_test, "auc")@y.values), 3), ")", sep = "")))
+     main = paste("Pruned Decision Tree (Testing Data) ROC (AUC ", round(as.numeric(performance(package_tree_prediction_pruned_test, "auc")@y.values), 3), ")", sep = ""))
+dev.off()
+pdf(file = "decision-tree-plot-pruned.pdf", width = 10, height = 8)
 prp(package_tree_pruned)
+dev.off()
 package_tree_predict_pruned_train <- predict(package_tree_pruned, newdata = package_train)
 package_tree_prediction_pruned_train <- prediction(package_tree_predict_pruned_train[,2], package_train$was_delayed_weather)
-as.numeric(performance(package_tree_prediction_pruned_train, "auc")@y.values) # 0.832
+as.numeric(performance(package_tree_prediction_pruned_train, "auc")@y.values) # 0.842
 package_tree_perf_pruned_train <- performance(package_tree_prediction_pruned_train, "tpr", "fpr")
+png(filename = "decision-tree-roc-train-pruned.png", width = 10, height = 8, units = "in", res = 300)
 plot(package_tree_perf_pruned_train,
      colorize = TRUE,
      print.cutoffs.at = seq(0.000, 0.020, 0.001),
      text.adj=c(-0.2, 1.7),
      cutoff.label.function=function(x) { round(x, 3) },
-     title(main = paste("Pruned Decision Tree (Training Data) ROC (AUC ", round(as.numeric(performance(package_tree_prediction_pruned_train, "auc")@y.values), 3), ")", sep = "")))
+     main = paste("Pruned Decision Tree (Training Data) ROC (AUC ", round(as.numeric(performance(package_tree_prediction_pruned_train, "auc")@y.values), 3), ")", sep = ""))
+dev.off()
 
 # This tree is much less complicated, and is a poorer fit to the training data AS WELL as the testing data,
 # but I think the reduction in the tree complexity is worth it.
@@ -408,16 +288,30 @@ package_forest <- randomForest(
 summary(package_forest)
 package_forest_predict_test <- predict(package_forest, newdata = package_test, type="prob")
 package_forest_prediction_test <- prediction(package_forest_predict_test[,2], package_test$was_delayed_weather)
-as.numeric(performance(package_forest_prediction_test, "auc")@y.values) # 0.922
+as.numeric(performance(package_forest_prediction_test, "auc")@y.values) # 0.914
 package_forest_perf_test <- performance(package_forest_prediction_test, "tpr", "fpr")
-plot(package_forest_perf_test, colorize = TRUE, print.cutoffs.at = seq(0.000, 0.030, 0.002), text.adj=c(-0.2, 1.7), cutoff.label.function=function(x) { round(x, 3) })
+png(filename = "random-forest-roc-test.png", width = 10, height = 8, units = "in", res = 300)
+plot(package_forest_perf_test,
+     colorize = TRUE,
+     print.cutoffs.at = seq(0.000, 0.030, 0.002),
+     text.adj=c(-0.2, 1.7),
+     cutoff.label.function=function(x) { round(x, 3) },
+     main = paste("Random Forest (Test Data) ROC (AUC ", round(as.numeric(performance(package_forest_prediction_test, "auc")@y.values), 3), ")", sep = ""))
+dev.off()
 
 # Take a look at the AUC against the training data
 package_forest_predict_train <- predict(package_forest, newdata = package_train, type="prob")
 package_forest_prediction_train <- prediction(package_forest_predict_train[,2], package_train$was_delayed_weather)
 as.numeric(performance(package_forest_prediction_train, "auc")@y.values) # 1.000 (!)
 package_forest_perf_train <- performance(package_forest_prediction_train, "tpr", "fpr")
-plot(package_forest_perf_train, colorize = TRUE, print.cutoffs.at = seq(0.000, 0.030, 0.002), text.adj=c(-0.2, 1.7), cutoff.label.function=function(x) { round(x, 3) })
+png(filename = "random-forest-roc-train.png", width = 10, height = 8, units = "in", res = 300)
+plot(package_forest_perf_train,
+     colorize = TRUE,
+     print.cutoffs.at = seq(0.000, 0.030, 0.002),
+     text.adj=c(-0.2, 1.7),
+     cutoff.label.function=function(x) { round(x, 3) },
+     main = paste("Random Forest (Training Data) ROC (AUC ", round(as.numeric(performance(package_forest_prediction_train, "auc")@y.values), 3), ")", sep = ""))
+dev.off()
 # This seems radically over-fit, yet still provides a good accuracy against the testing data.
 # I'm not quite sure what to do at this point, except throw more unseen data at the model.
 # We have been using 25% of the full data set (60% of that 25% towards training and 40% towards testing) so far.
@@ -450,29 +344,120 @@ package_full$tracking_number <- as.character(package_full$tracking_number)
 package_activity_weather_summary_full <-
    package_activity_weather_summary_full %>%
    left_join(package_full, by = c("tracking_number" = "tracking_number"))
-package_remainder <- package_activity_weather_summary_full[!package_activity_weather_summary_full$tracking_number %in% package_activity_weather_summary$tracking_number,]
+package_remainder <-
+   package_activity_weather_summary_full[!package_activity_weather_summary_full$tracking_number
+                                         %in%
+                                         package_train$tracking_number
+                                         &
+                                         !package_activity_weather_summary_full$tracking_number
+                                         %in%
+                                         package_test$tracking_number
+                                         ,]
+remove(package_full, package_activity_full, weather_full, package_activity_weather_full, package_activity_weather_summary_full)
 
 # We now have the remainder data set (all records that were not used for training or testing).  Feed
 # them into our random forest model.
 package_forest_predict_remainder <- predict(package_forest, newdata = package_remainder, type="prob")
 package_forest_prediction_remainder <- prediction(package_forest_predict_remainder[,2], package_remainder$was_delayed_weather)
-as.numeric(performance(package_forest_prediction_remainder, "auc")@y.values) # 0.920
+as.numeric(performance(package_forest_prediction_remainder, "auc")@y.values) # 0.918
 package_forest_perf_remainder <- performance(package_forest_prediction_remainder, "tpr", "fpr")
+png(filename = "random-forest-roc-remainder.png", width = 10, height = 8, units = "in", res = 300)
 plot(package_forest_perf_remainder,
      colorize = TRUE,
      print.cutoffs.at = seq(0.000, 0.030, 0.002), text.adj=c(-0.2, 1.7),
      cutoff.label.function=function(x) { round(x, 3) },
-     title(main = paste("Random Forest (Remainder Data) ROC (AUC ", round(as.numeric(performance(package_forest_prediction_remainder, "auc")@y.values), 3), ")", sep = "")))
+     main = paste("Random Forest (Remainder Data) ROC (AUC ", round(as.numeric(performance(package_forest_prediction_remainder, "auc")@y.values), 3), ")", sep = ""))
+dev.off()
+package_forest_perf_remainder_acc <- performance(package_forest_prediction_remainder, "acc")
+
+# Null prediction 
+#         f   t
+# f 1676896   0
+# t   10932   0
+# accuracy: 99.4%
+
+# add in the predicted values to our data frames
+package_test <- cbind(package_test, was_delayed_weather_pred = package_forest_predict_test[,2])
+package_train <- cbind(package_train, was_delayed_weather_pred = package_forest_predict_train[,2])
+package_remainder <- cbind(package_remainder, was_delayed_weather_pred = package_forest_predict_remainder[,2])
+
+# plot each package over time against the was delayed due to weather prediction,
+# coloring the data by the actual weather delay parameter
+ggsave(filename = "package_prediction_timeline.png",
+       width = 10,
+       height = 8,
+       dpi = 300,
+       units = "in",
+       plot =
+          ggplot(data = package_remainder[with(package_remainder, order(was_delayed_weather)), ],
+                 aes(x = ship_date_time,
+                     y = was_delayed_weather_pred,
+                     color = was_delayed_weather,
+                     alpha = was_delayed_weather)) +
+             scale_alpha_discrete(range = c(0.50, 0.50)) +
+             geom_point(size = 0.5) +
+             xlim(as.POSIXct("2015-06-15 00:00:00"), as.POSIXct("2015-12-31 23:59:59")))
+# add in some jitter
+ggsave(filename = "package_prediction_timeline_jitter.png",
+       width = 10,
+       height = 8,
+       dpi = 300,
+       units = "in",
+       plot =
+          ggplot(data = package_remainder,
+                 aes(x = ship_date_time,
+                     y = was_delayed_weather_pred,
+                     color = was_delayed_weather,
+                     alpha = was_delayed_weather)) +
+             scale_alpha_discrete(range = c(0.50, 0.50)) +
+             geom_point(size = 0.5, position = position_jitter(w = 200000, h = 0.0)) +
+             xlim(as.POSIXct("2015-06-15 00:00:00"), as.POSIXct("2015-12-31 23:59:59")))
+
+
+   scale_x_discrete(xlim = )
+
+class(package_test$ship_date_time)
+
+
+ ggplot(data = filter_(package_train_order, paste(i, " <= stats::quantile(", i, ", 0.995) & ", i, " >= stats::quantile(", i, ", 0.005) & ", j, " <= stats::quantile(", j, ", 0.995) & ", j, " >= stats::quantile(", j, ", 0.005)", sep = "")),
+        aes_string(x = i,
+                   y = j,
+                   color = "was_delayed_weather",
+                   alpha = "was_delayed_weather")) +
+ geom_point() +
+ scale_alpha_discrete(range = c(0.03, 0.50)) +
+ geom_smooth(alpha = 0.5,
+             method = "lm"))
 
 
 
-ggsave(filename = "random_forest_remainder_roc")
 
-?plot
-?text
+summary(package_remainder)
+
+?cbind
+
+class(package_forest_predict_remainder[,2])
+
+package_forest_prediction_remainder
+
+# Random Forest model with threshold set at 0.15
+table(package_remainder$was_delayed_weather, package_forest_predict_remainder[,2] > 0.15)
+#         f      t
+# f 1674819   2077
+# t    6341   4591
+# accuracy: 99.5%
+
+# Despite projections that the high accuracy of the null prediction would not be exceeded, we were able to achieve a 0.1% increase.
+
+summary(package_remainder)
+summary(package_forest_prediction_remainder)
 
 
+ggplot(data = package_forest_predict_remainder$ [,2])
+head(package_forest_predict_remainder)
 
-# table(package_test$was_delayed_weather, package_forest_predict_test[,2] > 0.04)
+package_forest_predict_remainder$f
 
+
+plot(package_forest_predict_remainder[,2])
 
