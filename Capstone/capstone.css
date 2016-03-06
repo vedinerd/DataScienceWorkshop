@@ -3,6 +3,7 @@ body {
 	padding: 30px;
 	font-size: 12pt;
 	line-height: 18pt;
+	min-width: 980px;
 }
 h1 {
 	margin: 0px 0px 20px 0px;
