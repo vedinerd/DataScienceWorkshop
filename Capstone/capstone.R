@@ -7,6 +7,7 @@ library(randomForest)
 library(rpart)
 library(rpart.plot)
 library(ggplot2)
+library(corrplot)
 
 ################################################################################
 # prepare data
@@ -108,14 +109,17 @@ for(i in names(package_train[c(3:11, 13:21, 23:31)])) {
              geom_boxplot())
 }
 
+# look for highly correlated variables
+correlation <- cor(package_train[sapply(package_train, is.numeric)])
+png(filename = "correlation.png", width = 10, height = 8, units = "in", res = 300)
+corrplot(correlation, method = "circle")
+dev.off()
+
+
 ################################################################################
 # logistic multiple regression
 
-# first look for highly correlated variables to get rid of them right off the bat
-correlation <- cor(package_train[sapply(package_train, is.numeric)])
-write.csv(correlation, "correlation.csv")
-
-# we see from this that dry_bulb_celsius, wet_bulb_celsius, and dew_point_celsius are all highly correlated, so just use dry_bulb_celsius_*
+# we see from our variable correlation plots above that dry_bulb_celsius, wet_bulb_celsius, and dew_point_celsius are all highly correlated, so just use dry_bulb_celsius_*
 
 # start with all the possibly relevant variables, except those eliminated above proactively as correlated,
 # and also eliminate hourly_precip_min since it is 0 for every package and therefore useless, and hourly_precip_mean has too little data
@@ -168,7 +172,7 @@ dev.off()
 
 # with this information, and given that the problem set wants to minimize the false negative rate,
 # choose 0.018 as the threshold, giving:
-table(package_test$was_delayed_weather, logistic_model_predict_test > 0.05)
+table(package_test$was_delayed_weather, logistic_model_predict_test > 0.020)
 
 ################################################################################
 # decision tree
@@ -274,6 +278,7 @@ dev.off()
 
 # This tree is much less complicated, and is a poorer fit to the training data AS WELL as the testing data,
 # but I think the reduction in the tree complexity is worth it.
+table(package_test$was_delayed_weather, package_tree_predict_pruned_test[,2] > 0.020)
 
 ################################################################################
 # random forest
@@ -355,8 +360,8 @@ package_remainder <-
                                          ,]
 remove(package_full, package_activity_full, weather_full, package_activity_weather_full, package_activity_weather_summary_full)
 
-# We now have the remainder data set (all records that were not used for training or testing).  Feed
-# them into our random forest model.
+# We now have the remainder data set (all records that were not used for training or testing).
+# Feed them into our random forest model.
 package_forest_predict_remainder <- predict(package_forest, newdata = package_remainder, type="prob")
 package_forest_prediction_remainder <- prediction(package_forest_predict_remainder[,2], package_remainder$was_delayed_weather)
 as.numeric(performance(package_forest_prediction_remainder, "auc")@y.values) # 0.918
@@ -370,11 +375,8 @@ plot(package_forest_perf_remainder,
 dev.off()
 package_forest_perf_remainder_acc <- performance(package_forest_prediction_remainder, "acc")
 
-# Null prediction 
-#         f   t
-# f 1676896   0
-# t   10932   0
-# accuracy: 99.4%
+# confusion matrix
+table(package_remainder$was_delayed_weather, package_forest_predict_remainder[,2] > 0.020)
 
 # add in the predicted values to our data frames
 package_test <- cbind(package_test, was_delayed_weather_pred = package_forest_predict_test[,2])
@@ -412,52 +414,4 @@ ggsave(filename = "package_prediction_timeline_jitter.png",
              scale_alpha_discrete(range = c(0.50, 0.50)) +
              geom_point(size = 0.5, position = position_jitter(w = 200000, h = 0.0)) +
              xlim(as.POSIXct("2015-06-15 00:00:00"), as.POSIXct("2015-12-31 23:59:59")))
-
-
-   scale_x_discrete(xlim = )
-
-class(package_test$ship_date_time)
-
-
- ggplot(data = filter_(package_train_order, paste(i, " <= stats::quantile(", i, ", 0.995) & ", i, " >= stats::quantile(", i, ", 0.005) & ", j, " <= stats::quantile(", j, ", 0.995) & ", j, " >= stats::quantile(", j, ", 0.005)", sep = "")),
-        aes_string(x = i,
-                   y = j,
-                   color = "was_delayed_weather",
-                   alpha = "was_delayed_weather")) +
- geom_point() +
- scale_alpha_discrete(range = c(0.03, 0.50)) +
- geom_smooth(alpha = 0.5,
-             method = "lm"))
-
-
-
-
-summary(package_remainder)
-
-?cbind
-
-class(package_forest_predict_remainder[,2])
-
-package_forest_prediction_remainder
-
-# Random Forest model with threshold set at 0.15
-table(package_remainder$was_delayed_weather, package_forest_predict_remainder[,2] > 0.15)
-#         f      t
-# f 1674819   2077
-# t    6341   4591
-# accuracy: 99.5%
-
-# Despite projections that the high accuracy of the null prediction would not be exceeded, we were able to achieve a 0.1% increase.
-
-summary(package_remainder)
-summary(package_forest_prediction_remainder)
-
-
-ggplot(data = package_forest_predict_remainder$ [,2])
-head(package_forest_predict_remainder)
-
-package_forest_predict_remainder$f
-
-
-plot(package_forest_predict_remainder[,2])
 

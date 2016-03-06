@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html>
+<head>
+   <title>The Effects of Weather on Small Package Deliverability</title>
+   <link rel="stylesheet" href="capstone.css" />
+</head>
+
+<body>
+
+<h1>
+   The Effects of Weather on Small Package Deliverability
+   <small>David Vediner</small>
+</h1>
+
+
+<h2>Introduction</h2>
+<p>
+The impact of weather on small package shipment deliverability is of great concern to my client.  But is there enough useful information in weather forecasts to develop a model that has adequate predictive power for my client's business purposes?  Weather is notoriously difficult to predict.  However, if we feed in enough information will useful patterns emerge?  Being able to use weather forecasts to highlight packages that are at a greater risk of being delivered late would be a very useful tool, particularly for very high-value shipments.  To that end, a few algorithms will be developed, explored, and compared, in an attempt to provide a useful predictive model.
+</p>
+
+<h2>Data Sources</h2>
+<p>
+My client was able to provide a large set of data consisting of several million packages, each with roughly 5-10 "package activity" records (essentially the same as the data you would see when "tracking" a package on ups.com or fedex.com).  This data represented package shipments from many sources to many different destinations across the continental United States from roughly June 2015 through December 2015, and each package activity record contained a city and state to show the rough geographic location the package activity occurred in. The package data provided all necessary information to determine whether or not the package was late, and if it was late, whether or not that was due to issues with weather.  The primary identifier used to link the packages with the package activities was the package tracking number, which is unique among shipping carriers and the six-month or so time span we were dealing with.  My client was also able to provide a table of all ZIP codes for the United States which mapped each ZIP code to a centroid latitude/longitude pair, as well as to a city and state pair.
+</p>
+<p>
+I was able to locate an extensive set of climatological data from the National Oceanic and Atmospheric Administration (NOAA), available to the public [<a href="#footnote_01">1</a>].  This data (Quality Controlled Local Climatological Data -- QCLCD) contained at least hourly weather observations from thousands of weather stations across the United States dating back several years, as well as a separate data set containing the geographic location of each weather station making the observation.
+</p>
+
+<h2>Wrangling the Data</h2>
+<p>
+The data required extensive cleaning and wrangling, and this process is documented in the "<a href="data_import.sql">data_import.sql</a>" file (most cleaning and wrangling was performed in PostgreSQL), and to a lesser extent, in the "<a href="capstone.R">capstone.R</a>" file.  An outline of the process as performed in SQL is as follows:
+<ul>
+<li>
+   <h3><a href="data_import.sql">data_import.sql</a></h3>
+<ul>
+<li>
+   <h4>QCLCD weather station and ZIP code data</h4>
+   <p>
+   This involved some type coercion from text fields to numeric fields, removing some weather stations that were outside of the United States or contained mostly empty data, and manually setting the names or locations of some weather stations or ZIP codes that contained obviously incorrect (or inconsistent) data.
+   </p>
+</li>
+<li>
+   <h4>QCLCD weather data</h4>
+   <p>
+   The weather data contained many records with empty recordings.  If enough data was missing, the record was simply dropped, on the assumption that there are many weather stations and if a record is dropped there is likely one from another weather station nearby.  The weather data was then grouped by the nearest hour and station to eliminate multiple records occurring in the same hour, taking the mean for each field.  I reasoned that hourly resolution was enough, and this cut down the data quite a bit, making it more manageable.  Some of the records were also able to be reconstructed or interpolated.  For example, if a few wind speed readings were missing for a particular day for a particular weather station, the average wind speed for that weather station on that day was filled in.  Another example is calculating the relative humidity based on a formula involving the dry and wet bulb temperature readings.
+   </p>
+</li>
+<li>
+   <h4>Package and Package activity data</h4>
+   <p>
+   The first step was to eliminate many proprietary and irrelevant columns in the package and package activity data sets.  The package activity also needed a "rounded date time" column containing the nearest hour each activity occurred on to match to the now grouped weather data.  The package activity table also needed to be matched with the ZIP code table (based on the city and state pairs).  This required quite a bit of manual editing of the city names to match across the package activities and ZIP code table.  For example, the ZIP code table might contain the city name "SAINT LOUIS", where the package activity table might contain the city name "ST. LOUIS", which obviously will not match.  The vast majority of this cleaning was performed with a few simple substitutions ("SAINT" to "ST.", "MOUNT" to "MT.", "FORT" to "FT.", etc..), converting all names to upper case, and trimming them of white spaces and special characters.  The very few records that were not matched were dropped, along with their respective package.  I could now join the weather, weather station, zip code, and package activity data to store a latitude and longitude pair for the city and state associated with each package activity.
+   </p>
+</li>
+<li>
+   <h4>Linking the package activity and weather records</h4>
+   <p>
+   Now that I had a latitude and longitude pair for each package activity, I could locate the weather observation that was recorded nearest in time and space to that package activity.  To do this I enlisted the help of the PostGIS package [<a href="#footnote_02">2</a>], a geo-spatial toolset for the PostgreSQL database.  This was an iterative process where I calculated the nearest weather station in space for all package activity records, and then looked to see if there was a weather observation associated with that weather station at the time the package activity occurred.  If not, I looked for the second nearest weather station and repeated the process, and then the third nearest, fourth nearest, etc..  Although it took around ten iterations to associate all package activity records with a weather observation, the vast majority of the records were matched in the first iteration.  I also calculated a "distance error" which contained the distance between the final weather station chosen and the geographical centroid for each package activity record.  A better algorithm would have searched for the next closest station in both time and space and not just space, but I felt this simpler algorithm was sufficient.
+   </p>
+</li>
+<li>
+   <h4>Final SQL wrangling</h4>
+   <p>
+   A new column was calculated which contained a binary indicator displaying whether or not a package was delayed due to weather, which is the variable we are interested in predicting.  And finally, two sets of data were output into comma-separated format from SQL, one data set containing a randomly chosen sample of the data (25%), to allow the data set to be explored more efficiently, and the full data set.  The sample data set is contained in the "sample_data" folder.  The full data set is not provided in this repository.  The final tables to be imported into R had the following structure:
+   </p>
+   <table class="data_table">
+   <tr><th>Package (2,308,354 records)</th><th>Package Activity (16,831,080 records)</th><th>Weather (12,529,701 records)</th></tr>
+   <tr><td>tracking_number (text)</td><td>tracking_number (text)</td><td>wban (text)</td></tr>
+   <tr><td>ship_date_time (timestamp)</td><td>date_time (timestamp)</td><td>date_time (timestamp)</td></tr>
+   <tr><td>scheduled_delivery_date_time (timestamp)</td><td>activity_code (text)</td><td>visibility (numeric)</td></tr>
+   <tr><td>actual_delivery_date_time (timestamp)</td><td>city (text)</td><td>weather_type (text)</td></tr>
+   <tr><td>service (text)</td><td>state (text)</td><td>dry_bulb_celsius (numeric)</td></tr>
+   <tr><td>required_intervention (boolean)</td><td>zip_code (text)</td><td>wet_bulb_celsius (numeric)</td></tr>
+   <tr><td>was_delayed (boolean)</td><td>latitude (numeric)</td><td>dew_point_celsius (numeric)</td></tr>
+   <tr><td>was_delayed_weather (boolean)</td><td>longitude (numeric)</td><td>relative_humidity (numeric)</td></tr>
+   <tr><td></td><td>closest_station_wban (text)</td><td>wind_speed (numeric)</td></tr>
+   <tr><td></td><td>rounded_date_time (timestamp)</td><td>station_pressure (numeric)</td></tr>
+   <tr><td></td><td>station_distance_error (numeric)</td><td>record_type (text)</td></tr>
+   <tr><td></td><td></td><td>hourly_precip (numeric)</td></tr>
+   <tr><td></td><td></td><td>altimeter (numeric)</td></tr>
+   </table>
+</li>
+</ul>
+</li>
+<li>
+   <h3><a href="capstone.R">capstone.R</a></h3>
+<ul>
+<li>
+   <h4>Data import</h4>
+   I read the zipped CSV data into three data frames, one containing the package data, one containing the package activity data, and one containing the weather data.  The date time fields were all converted to a POSIXct type so they could be manipulated more easily.
+</li>
+<li>
+   <h4>Combining the data</h4>
+   I now faced a decision.  I needed to see if I could build a model to predict the "was_delayed_weather" variable, but most (or all) of the data that would be used to predict that variable lay in other data frames.  Furthermore, the "was_delayed_weather" variable has associated with each package, and yet each package was associated with multiple observations in the other two tables.  I eventually decided to join all three tables and group on the tracking_number field, taking the mean, maximum, and minimum of each numeric weather observation for that package.
+</li>
+<li>
+   <h4>Splitting the data</h4>
+   After arriving at the final single data frame I would use as an input for the models I would develop, I decided on splitting 60% of the data into a training set and reserving 40% of the data for testing.  Note that because at this point I was only working with 25% of the entire data set, I was effectively training on 15% of the entire data set, testing with 10%, and leaving 75% as further verification.  I knew that if my models didn't work, I could always start over with a larger data set for training.
+</li>
+</ul>
+</li>
+</ul>
+</p>
+
+<h2>Accuracy Paradox</h2>
+<p>
+Before attempting any predictive model, I calculated the accuracy of the null prediction, in order to have a baseline accuracy to compare against.  The training set yielded the confusion matrix shown in figure 1.
+</p>
+
+<div class="figure">
+<div>Figure 1</div>
+<table class="data_table">
+<tr><th></th><th>F (PRED)</th><th>T (PRED)</th></tr>
+<tr><th>F (ACTUAL)</th><th>334,835</th><td>0</td></tr>
+<tr><th>T (ACTUAL)</th><td>2,170</td><th>0</th></tr>
+</table>
+<div>Confusion matrix for null prediction</div>
+</div>
+
+<p>
+This null prediction demonstrates an accuracy for the null prediction of 99.35%, a value I was unlikely to exceed.  After doing a little research, I came across what Wikipedia described as the "Accuracy Paradox" [<a href="#footnote_03">3</a>], which seemed to match my situation precisely.  When predicting rare events, the null model as a baseline will generally have a high accuracy.  However, the null model is useless as a predictive model in practical application.  Therefore, even a model with a lower accuracy is possibly preferable, as long as these issues are acknowledged and an acceptable trade-off between the false positive and negative rates are understood and customized to the problem at hand.  For example, in the example on Wikipedia it is noted that in a financial environment, accepting an actually fraudulent transaction is much worse than denying an actually non-fraudulent transaction.  This is one reason allowing a model with a lower accuracy but higher predictive ability with respect to actually fraudulent transactions makes practical sense. Armed with this knowledge I was able to proceed.
+</p>
+
+<h2>Variable Correlation</h2>
+<p>
+
+<div class="figure right">
+<div>Figure 2</div>
+<a href="correlation.png"><img src="correlation.png" style="width: 300px;" /></a>
+<div>Correlations between variable pairs</div>
+</div>
+The results of issuing the following command can be seen in figure 2.
+<code>corrplot(cor(package_train[sapply(package_train, is.numeric)]),
+         method = "circle")</code>
+There are a few obvious patterns in this correlation plot that stand out.  Because the data consists of the same ten variables repeated three times, except once as the mean, once as the max, and once as the min, we see the same patterns generally repeated in a 3x3 grid.  There appears to be some correlation between the visibility_* and relative_humidity_* values, but the highest correlation is between the dry_bulb_celsius_*, wet_bulb_celsius_*, and dew_point_celsius_* values.  This is, of course, expected, and can been seen as the small 3x3 groups repeated nine times.  This leads us to conclude that we can probably ignore two of these three variables in each of the *_mean, *_max, and *_min variable groups.
+</p>
+
+<h2>Multiple Linear Regression</h2>
+<p>
+The first model attempted was a simple multiple linear regression model.  A model using all variables (except a few eliminated during the variable correlation analysis above) was constructed, and then variables were eliminated one at a time until all variables were significant.  The final model was constructed using the following code.
+<code>glm(was_delayed_weather ~
+       visibility_mean + dry_bulb_celsius_mean + relative_humidity_mean + wind_speed_mean +
+       station_pressure_mean + visibility_max + relative_humidity_max + hourly_precip_max +
+       visibility_min + dry_bulb_celsius_min + relative_humidity_min + wind_speed_min +
+       station_pressure_min,
+    data = package_train,
+    family = "binomial")
+</code>
+To analyze the linear model, I extracted an ROC curve for both the training and the test data, and calculated the AUC for each, as seen in figures 4 and 5.  Calculating the ROC curve for the training data allows me to explore the possibility of the data being over-fit.  It is clear that the model yielded some predictive capability.  Choosing a threshold of 0.020, I generated the confusion matrix seen in figure 3, which shows an accuracy of 94.19%.
+</p>
+
+<div class="center">
+<div class="figure left">
+<div>Figure 3</div>
+<table class="data_table">
+<tr><th></th><th>F (PRED)</th><th>T (PRED)</th></tr>
+<tr><th>F (ACTUAL)</th><th>211,154</th><td>12,038</td></tr>
+<tr><th>T (ACTUAL)</th><td>1,008</td><th>470</th></tr>
+</table>
+<div>Confusion matrix for linear regression,<br />
+threshold = 0.020</div>
+</div>
+<div class="figure left">
+<div>Figure 4</div>
+<a href="results_plots/logistic-multiple-regression-roc-train.png"><img src="results_plots/logistic-multiple-regression-roc-train.png" style="width: 300px;" /></a>
+<div>ROC curve for logistic regression<br />(training data - AUC 0.796)</div>
+</div>
+<div class="figure left">
+<div>Figure 5</div>
+<a href="results_plots/logistic-multiple-regression-roc-test.png"><img src="results_plots/logistic-multiple-regression-roc-test.png" style="width: 300px;" /></a>
+<div>ROC curve for logistic regression<br />(test data - AUC 0.792)</div>
+</div>
+</div>
+
+<h2>Decision Tree</h2>
+<p>
+The next model I tried was a decision tree, constructed using the following code.
+<code>rpart(
+   was_delayed_weather ~
+      visibility_mean + dry_bulb_celsius_mean + relative_humidity_mean + wind_speed_mean +
+      station_pressure_mean + hourly_precip_mean + visibility_max + dry_bulb_celsius_max +
+      relative_humidity_max + wind_speed_max + station_pressure_max + hourly_precip_max +
+      visibility_min + dry_bulb_celsius_min + relative_humidity_min + wind_speed_min +
+      station_pressure_min,
+   method = "class",
+   control = rpart.control(cp = 0.0001, minsplit = 40),
+   data = package_train)</code>
+The parameters passed to the control parameter were determined by sweeping the two-dimensional parameter space and calculating the AUC at each point.  Figure 6 shows a plot of the tree, and figures 7 and 8 show the AUC curves for this model against the training data and the testing data.  I noticed an immediate improvement in this model versus the logistic multiple regression, but a display of the tree showed that it was very complicated.
+</p>
+
+<div class="center">
+<div class="figure left">
+<div>Figure 6</div>
+<a href="decision-tree-plot.pdf"><img src="decision-tree-plot-thumbnail.png" style="width: 300px;" /></a>
+<div>Decision tree</div>
+</div>
+<div class="figure left">
+<div>Figure 7</div>
+<a href="results_plots/decision-tree-roc-train.png"><img src="results_plots/decision-tree-roc-train.png" style="width: 300px;" /></a>
+<div>ROC curve for decision tree<br />(training data - AUC 0.839)</div>
+</div>
+<div class="figure left">
+<div>Figure 8</div>
+<a href="results_plots/decision-tree-roc-test.png"><img src="results_plots/decision-tree-roc-test.png" style="width: 300px;" /></a>
+<div>ROC curve for decision tree<br />(test data - AUC 0.828)</div>
+</div>
+</div>
+
+<p>
+To reduce the complexity of the decision tree and decrease the chances that the model was over-fit, I issued the following command 
+<code>package_tree_pruned <-
+   prune(package_tree, cp = package_tree$cptable[which.min(package_tree$cptable[,"xerror"]),"CP"])</code>
+Figures 9 and 10 show a complexity parameter plot for each tree, before and after the pruning.  And figures 12, 13, and 14 show the same plots as figures 6, 7, and 8, except using the pruned tree.  The pruned tree is noticeably less complex, and while this comes at the expense of some accuracy, I believe it is worth it to work with a less complicated tree.  A confusion matrix using the pruned data and a threshold value of 0.020 (as shown in figure 11) yields an accuracy of 95.30%.
+</p>
+
+<div class="center">
+<div class="figure left">
+<div>Figure 9</div>
+<a href="results_plots/decision-tree-complexity-parameter.png"><img src="results_plots/decision-tree-complexity-parameter.png" style="width: 300px;" /></a>
+<div>Complexity parameter plot</div>
+</div>
+<div class="figure left">
+<div>Figure 10</div>
+<a href="results_plots/decision-tree-complexity-parameter-pruned.png"><img src="results_plots/decision-tree-complexity-parameter-pruned.png" style="width: 300px;" /></a>
+<div>Complexity parameter plot (pruned)</div>
+</div>
+<div class="figure left">
+<div>Figure 11</div>
+<table class="data_table">
+<tr><th></th><th>F (PRED)</th><th>T (PRED)</th></tr>
+<tr><th>F (ACTUAL)</th><th>213,445</th><td>9,747</td></tr>
+<tr><th>T (ACTUAL)</th><td>806</td><th>672</th></tr>
+</table>
+<div>Confusion matrix for linear regression,<br />
+threshold = 0.020</div>
+</div>
+</div>
+
+<div class="center">
+<div class="figure left">
+<div>Figure 12</div>
+<a href="decision-tree-plot-pruned.pdf"><img src="decision-tree-plot-pruned-thumbnail.png" style="width: 300px;" /></a>
+<div>Pruned decision tree</div>
+</div>
+<div class="figure left">
+<div>Figure 13</div>
+<a href="results_plots/decision-tree-roc-train-pruned.png"><img src="results_plots/decision-tree-roc-train-pruned.png" style="width: 300px;" /></a>
+<div>ROC curve for pruned decision tree<br />(training data - AUC 0.815)</div>
+</div>
+<div class="figure left">
+<div>Figure 14</div>
+<a href="results_plots/decision-tree-roc-test-pruned.png"><img src="results_plots/decision-tree-roc-test-pruned.png" style="width: 300px;" /></a>
+<div>ROC curve for pruned decision tree<br />(test data - AUC 0.814)</div>
+</div>
+</div>
+
+<h2>Random Forest</h2>
+<p>
+The last algorithm I fit to the data was a random forest, created using the following command.
+<code>randomForest(
+   was_delayed_weather ~
+      visibility_mean + dry_bulb_celsius_mean + relative_humidity_mean + wind_speed_mean +
+      station_pressure_mean + hourly_precip_mean + visibility_max + dry_bulb_celsius_max +
+      relative_humidity_max + wind_speed_max + station_pressure_max + hourly_precip_max +
+      visibility_min + dry_bulb_celsius_min + relative_humidity_min + wind_speed_min +
+      station_pressure_min,
+   data = package_train, nodesize = 20, ntree = 500)
+</code>
+Once again, the parameters were chosen based on some parameter sweeping, as well as some intuition of what would make good parameters and discourage overfitting (and of course consulting the documentation).  Figures 15 and 16 show the ROC curves for the training and testing data, respectively.
+</p>
+
+<div class="center">
+<div class="figure left">
+<div>Figure 15</div>
+<a href="results_plots/random-forest-roc-train.png"><img src="results_plots/random-forest-roc-train.png" style="width: 300px;" /></a>
+<div>ROC curve for random forest<br />(training data - AUC 1.000)</div>
+</div>
+<div class="figure left">
+<div>Figure 16</div>
+<a href="results_plots/random-forest-roc-test.png"><img src="results_plots/random-forest-roc-test.png" style="width: 300px;" /></a>
+<div>ROC curve for random forest<br />(test data - AUC 0.918)</div>
+</div>
+</div>
+
+<p>
+Upon seeing the ROC curve for the training data, I assumed I either made a mistake, was using the random forest algorithm incorrectly, or had provided parameters that led to a radical overfitting of the data (the AUC for the ROC curve on the training data rounds up to 1.000(!)).  Still, the model provided a reasonable fit to the testing data.  So I decided to run the remaining 75% of the data set that had been reserved through the model.  The resulting ROC curve is shown in figure 17 and a confusion matrix with threshold at 0.020 is shown in figure 18.  The confusion matrix shows an accuracy of 97.70%, the best achieved of all the models.  After doing some more research into the random forest model, I concluded that because the model fit the test and remainder data reasonably well, but not to an unrealistic degree, that the random forest was still providing the most reliable predictions.
+</p>
+
+<div class="center">
+<div class="figure left">
+<div>Figure 17</div>
+<a href="results_plots/random-forest-roc-remainder.png"><img src="results_plots/random-forest-roc-remainder.png" style="width: 300px;" /></a>
+<div>Complexity parameter plot (pruned)</div>
+</div>
+<div class="figure left">
+<div>Figure 18</div>
+<table class="data_table">
+<tr><th></th><th>F (PRED)</th><th>T (PRED)</th></tr>
+<tr><th>F (ACTUAL)</th><th>1,641,348</th><td>35,548</td></tr>
+<tr><th>T (ACTUAL)</th><td>3,342</td><th>7,590</th></tr>
+</table>
+<div>Confusion matrix for linear regression,<br />
+threshold = 0.020</div>
+</div>
+</div>
+
+<p>
+To help visualize the data, I plotted the predicted delay due to weather parameter (which ranges from 0.0 to 1.0 and is an output from the random forest algorithm) vs. the package manifest date, and colored the scatterplot points based on whether or not the package was actually late due to weather, as seen in figure 19.
+<code>ggplot(data = package_remainder[with(package_remainder, order(was_delayed_weather)), ],
+           aes(x = ship_date_time,
+               y = was_delayed_weather_pred,
+               color = was_delayed_weather,
+               alpha = was_delayed_weather)) +
+       scale_alpha_discrete(range = c(0.50, 0.50)) +
+       geom_point(size = 0.5) +
+       xlim(as.POSIXct("2015-06-15 00:00:00"), as.POSIXct("2015-12-31 23:59:59"))
+</code>
+Ideally I  would like to see the points with blue dots disproportionately towards the top of the plot and the points with red dots disproportionately toward the bottom of the plot, which is generally what is observed.  I sorted the incoming data based on the was_delayed_weather parameter so the (much fewer in count) TRUE values would show up on top.  This has the effect of making them easier to see, but also could obscure the FALSE values underneath.  Partial transparency helps with this.
+</p>
+
+<div class="center">
+<div class="figure left">
+<div>Figure 19</div>
+<a href="results_plots/package_prediction_timeline.png"><img src="results_plots/package_prediction_timeline.png" style="width: 300px;" /></a>
+<div>Predicted delay due to weather parameter<br />vs. package manifest date</div>
+</div>
+</div>
+
+<p>
+Some interesting observations can be made from this plot.  First, while the plot may look a little like a histogram, it is not; the "height" of the plot doesn't necessarily have anything to do with the number of packages shipped on that day.  Second, the weekly pattern of shipping carriers is made obvious.  Third, it appears we are missing a few weeks of data in late November, for unknown reasons.  Fourth, there appear to be "spikes" in the data, which were puzzling at first, but seem as though they must correspond to large regional "weather events", such as a widespread or particularly intense storm events, which caused a disproportionate number of packages to be late.
+</p>
+
+<h2>Limitations</h2>
+<p>
+While I certainly attempted to make this analysis as accurate as possible, there are a few limitations, some of them major, which should be addressed in the future.
+<ul>
+<li>The package data set used represented only a part of a year, rather than a full year.  A full year of data (even better data spanning multiple years) would be more useful to cover all seasons.  I am comfortable that the period from June through December should cover enough weather patterns to make good first approximation, however.</li>
+<li>To be useful to my client, the model must use weather <em>forecast</em> data, not actual weather data (as was used).  This will add an additional layer of uncertainty.  Actual forecast data should be introduced at some point in the future and the models reevaluated.</li>
+<li>While I apparently achieved a useful degree of accuracy with the </li>
+<li>The nearly perfect fit of the random forest model to the training data still causes me concern, and warrants further study.</li>
+<li>Only three models were explored, and many more exist.  The odds that the best model was chosen from these three simple models are low.  Furthermore, it is possible a combination of multiple algorithms is a better approach.</li>
+</ul>
+</p>
+
+<h2>Future Exploration</h2>
+<p>
+The model as developed will be of immediate use to my client, and will probably be integrated into their product to display a predictive factor on packages, classifying their risk of being delayed due to weather based on available forecast data.  After this system is implemented, performance can be monitored and further data can be fed back into the algorithms, exposing them to new circumstances and thereby strengthening their predictive ability.  Additionally, the issues mentioned in the limitations section above will be investigated and addressed.
+</p>
+
+<h2>Notes</h2>
+<p>
+<ol>
+<li><a name="footnote_01" /><a href="http://www.ncdc.noaa.gov/orders/qclcd/">http://www.ncdc.noaa.gov/orders/qclcd/</a></li>
+<li><a name="footnote_02" /><a href="http://postgis.net/">http://postgis.net/</a></li>
+<li><a name="footnote_03" /><a href="https://en.wikipedia.org/wiki/Accuracy_paradox">https://en.wikipedia.org/wiki/Accuracy_paradox</a></li>
+</ol>
+</p>
+
+</body>
+
+</html>
