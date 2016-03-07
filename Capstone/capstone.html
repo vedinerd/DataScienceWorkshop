@@ -285,11 +285,15 @@ Once again, the parameters were chosen based on some parameter sweeping, as well
 Upon seeing the ROC curve for the training data, I assumed I either made a mistake, was using the random forest algorithm incorrectly, or had provided parameters that led to a radical overfitting of the data (the AUC for the ROC curve on the training data rounds up to 1.000(!)).  Still, the model provided a reasonable fit to the testing data.  So I decided to run the remaining 75% of the data set that had been reserved through the model.  The resulting ROC curve is shown in figure 17 and a confusion matrix with threshold at 0.020 is shown in figure 18.  The confusion matrix shows an accuracy of 97.70%, the best achieved of all the models.  After doing some more research into the random forest model, I concluded that because the model fit the test and remainder data reasonably well, but not to an unrealistic degree, that the random forest was still providing the most reliable predictions.
 </p>
 
+<p>
+My client would like to achieve a good balance between between minimizing the false positive rate vs. the false negative rate, but all else being equal it is more important to minimize the false negative rate.  A plot of the false positive rate vs. the false negative rate can be seen in figure 19.  This plot shows that 0.020 is a reasonable value to choose for the threshold.  However, while this project involves predicting a binary outcome, it is possible that the end product from my client (after a few more iterations) will involve a continuous prediction, which will not involve choosing a threshold value, mitigating this issue somewhat.
+</p>
+
 <div class="center">
 <div class="figure left">
 <div>Figure 17</div>
 <a href="results_plots/random-forest-roc-remainder.png"><img src="results_plots/random-forest-roc-remainder.png" style="width: 300px;" /></a>
-<div>Complexity parameter plot (pruned)</div>
+<div>Complexity parameter plot (remainder)</div>
 </div>
 <div class="figure left">
 <div>Figure 18</div>
@@ -299,12 +303,17 @@ Upon seeing the ROC curve for the training data, I assumed I either made a mista
 <tr><th>T (ACTUAL)</th><td>3,342</td><th>7,590</th></tr>
 </table>
 <div>Confusion matrix for linear regression,<br />
-threshold = 0.020</div>
+threshold = 0.020, remainder data set</div>
+</div>
+<div class="figure left">
+<div>Figure 19</div>
+<a href="results_plots/random-forest-remainder-fpr-fnr.png"><img src="results_plots/random-forest-remainder-fpr-fnr.png" style="width: 300px;" /></a>
+<div>False positive rate vs. false negative rate<br />Remainder data</div>
 </div>
 </div>
 
 <p>
-To help visualize the data, I plotted the predicted delay due to weather parameter (which ranges from 0.0 to 1.0 and is an output from the random forest algorithm) vs. the package manifest date, and colored the scatterplot points based on whether or not the package was actually late due to weather, as seen in figure 19.
+To help visualize the data, I plotted the predicted delay due to weather parameter (which ranges from 0.0 to 1.0 and is an output from the random forest algorithm) vs. the package manifest date, and colored the scatterplot points based on whether or not the package was actually late due to weather, as seen in figure 20.
 <code>ggplot(data = package_remainder[with(package_remainder, order(was_delayed_weather)), ],
            aes(x = ship_date_time,
                y = was_delayed_weather_pred,
@@ -319,7 +328,7 @@ Ideally I  would like to see the points with blue dots disproportionately toward
 
 <div class="center">
 <div class="figure left">
-<div>Figure 19</div>
+<div>Figure 20</div>
 <a href="results_plots/package_prediction_timeline.png"><img src="results_plots/package_prediction_timeline.png" style="width: 300px;" /></a>
 <div>Predicted delay due to weather parameter<br />vs. package manifest date</div>
 </div>
@@ -345,6 +354,22 @@ While I certainly attempted to make this analysis as accurate as possible, there
 <p>
 The model as developed will be of immediate use to my client, and will probably be integrated into their product to display a predictive factor on packages, classifying their risk of being delayed due to weather based on available forecast data.  After this system is implemented, performance can be monitored and further data can be fed back into the algorithms, exposing them to new circumstances and thereby strengthening their predictive ability.  Additionally, the issues mentioned in the limitations section above will be investigated and addressed.
 </p>
+
+<h2>Conclusion</h2>
+<p>
+After testing three algorithms, despite some reservations as mentioned above, a random forest showed the highest accuracy, as shown in figure 21.  That is, aside from the null prediction, as discussed in the "accuracy paradox" section above.  However, choosing a different threshold value actually allows the developed random forest algorithm to achieve a higher accuracy than the null prediction, but that comes at the expense of too high a false negative rate.  Still, while further analysis of this situation is warranted, rhe algorithm as developed should have immediate use to my client, and should only get better as more analysis is performed and more data is run through it.
+</p>
+
+<div class="figure left">
+<div>Figure 21</div>
+<table class="data_table">
+<tr><th></th><th>Null prediction</th><th>Multiple Linear Regression</th><th>Decision Tree</th><th>Random Forest</th></tr>
+<tr><th>Accuracy</th><td>99.35%</td><td>94.19%</td><td>95.30%</td><td>97.70%</td></tr>
+</table>
+<div>Accuracy by algorithm, threshold = 0.020</div>
+</div>
+
+<div style="clear: both;"></div>
 
 <h2>Notes</h2>
 <p>
